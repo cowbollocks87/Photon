@@ -273,8 +273,8 @@ local function createBotESP(model)
 	data.text.Outline = true
 	data.text.OutlineColor = Color3.new(0, 0, 0)
 
-	table.insert(data.connections, model:GetAttributeChangedSignal("RountBot"):Connect(function()
-		if model:GetAttribute("RountBot") ~= true then
+	table.insert(data.connections, model:GetAttributeChangedSignal("RoundBot"):Connect(function()
+		if model:GetAttribute("RoundBot") ~= true then
 			removeBotESP(model)
 		end
 	end))
@@ -299,8 +299,8 @@ end
 local function watchForBot(model)
 	if botWatchers[model] or botEspData[model] then return end
 	local w = {}
-	w.attr = model:GetAttributeChangedSignal("RountBot"):Connect(function()
-		if model:GetAttribute("RountBot") == true then
+	w.attr = model:GetAttributeChangedSignal("RoundBot"):Connect(function()
+		if model:GetAttribute("RoundBot") == true then
 			clearBotWatcher(model)
 			createBotESP(model)
 		end
@@ -315,7 +315,7 @@ end
 
 local function scanWorkspaceChild(child)
 	if not child:IsA("Model") then return end
-	if child:GetAttribute("RountBot") == true then
+	if child:GetAttribute("RoundBot") == true then
 		createBotESP(child)
 	else
 		watchForBot(child)
