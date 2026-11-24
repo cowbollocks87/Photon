@@ -139,8 +139,17 @@ local function applySelfHighlight(hl)
 	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 end
 
-local function applyBotHighlight(hl)
-	local c = COLORS[botTrack.color] or COLORS.white
+local function getBotColor(model)
+	if teamESP.enabled and teamESP.survivorHealth.enabled then
+		local state = getHealthState(model)
+		local colorName = teamESP.survivorHealth[state]
+		if colorName then return COLORS[colorName] or COLORS.white end
+	end
+	return COLORS[botTrack.color] or COLORS.white
+end
+
+local function applyBotHighlight(hl, model)
+	local c = getBotColor(model)
 	hl.OutlineColor = c
 	hl.FillColor = c
 	hl.OutlineTransparency = botTrack.outlineTransparency
@@ -163,9 +172,9 @@ local function refreshSelfHighlight()
 end
 
 local function refreshBotHighlights()
-	for _, data in pairs(botEspData) do
+	for model, data in pairs(botEspData) do
 		if data.highlight then
-			applyBotHighlight(data.highlight)
+			applyBotHighlight(data.highlight, model)
 		end
 	end
 end
@@ -423,11 +432,15 @@ local function updateESP()
 		if active then
 			if not data.highlight then
 				data.highlight = Instance.new("Highlight")
-				applyBotHighlight(data.highlight)
+				applyBotHighlight(data.highlight, model)
 				data.highlight.Adornee = model
 				data.highlight.Parent = getHighlightParent()
 			end
 			data.highlight.Enabled = true
+
+			if teamESP.enabled and teamESP.survivorHealth.enabled then
+				applyBotHighlight(data.highlight, model)
+			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
@@ -444,7 +457,7 @@ local function updateESP()
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = COLORS[botTrack.color] or COLORS.white
+					data.text.Color = getBotColor(model)
 					data.text.Visible = true
 				else
 					data.text.Visible = false
@@ -810,6 +823,7 @@ local function init(Hub, UI)
 		sub:Choice("survivors", COLOR_NAMES, teamESP.colors.Survivors, function(c)
 			teamESP.colors.Survivors = c
 			refreshPlayerHighlights()
+			refreshBotHighlights()
 		end)
 		sub:Choice("killer", COLOR_NAMES, teamESP.colors.Killer, function(c)
 			teamESP.colors.Killer = c
@@ -820,20 +834,25 @@ local function init(Hub, UI)
 			inner:Choice("healthy", COLOR_NAMES, teamESP.survivorHealth.healthy, function(c)
 				teamESP.survivorHealth.healthy = c
 				refreshPlayerHighlights()
+				refreshBotHighlights()
 			end)
 			inner:Choice("injured", COLOR_NAMES, teamESP.survivorHealth.injured, function(c)
 				teamESP.survivorHealth.injured = c
 				refreshPlayerHighlights()
+				refreshBotHighlights()
 			end)
 			inner:Choice("downed", COLOR_NAMES, teamESP.survivorHealth.downed, function(c)
 				teamESP.survivorHealth.downed = c
 				refreshPlayerHighlights()
+				refreshBotHighlights()
 			end)
 		end, function()
 			refreshPlayerHighlights()
+			refreshBotHighlights()
 		end)
 	end, function()
 		refreshPlayerHighlights()
+		refreshBotHighlights()
 	end)
 
 	-- tracks
