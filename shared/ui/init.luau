@@ -303,6 +303,27 @@ function UI:_setPath(name)
 end
 
 function UI:SetVisible(v)
+	if v and not self.Window.Visible then
+		self._savedMouseBehavior = UserInputService.MouseBehavior
+		self._savedMouseIcon = UserInputService.MouseIconEnabled
+		if not self._cursorOverride then
+			self._cursorOverride = RunService.RenderStepped:Connect(function()
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+				UserInputService.MouseIconEnabled = true
+			end)
+		end
+	elseif not v and self.Window.Visible then
+		if self._cursorOverride then
+			self._cursorOverride:Disconnect()
+			self._cursorOverride = nil
+		end
+		if self._savedMouseBehavior ~= nil then
+			UserInputService.MouseBehavior = self._savedMouseBehavior
+		end
+		if self._savedMouseIcon ~= nil then
+			UserInputService.MouseIconEnabled = self._savedMouseIcon
+		end
+	end
 	self.Window.Visible = v
 end
 
