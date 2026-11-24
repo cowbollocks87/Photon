@@ -68,7 +68,13 @@ local function build(Hub, gameConfig)
 		local display = string.lower(player.DisplayName)
 		local username = "@" .. string.lower(player.Name)
 		local suffix = player == LocalPlayer and "  (you)" or ""
-		playerRows[player] = home:KeyValue(display .. suffix, username)
+		playerRows[player] = home:KeyValue(display .. suffix, username, function()
+			if setclipboard then
+				setclipboard(player.Name)
+				Hub:Log("copied " .. player.Name)
+				Hub:Notify("copied", username .. " to clipboard", 2)
+			end
+		end)
 	end
 
 	local function removePlayerRow(player)

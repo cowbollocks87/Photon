@@ -478,8 +478,16 @@ function Tab:Label(text)
 	return {Set = function(_, t) l.Text = t end}
 end
 
-function Tab:KeyValue(key, value)
+function Tab:KeyValue(key, value, callback)
 	local row = self:_row(22)
+	if callback then
+		local hit = self:_hit(row)
+		Text(hit, key, {Position = U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
+		local v = Text(hit, tostring(value), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = UDim2.new(0.5, -8, 1, 0),
+			TextSize = 11, TextColor3 = T.text, TextXAlignment = RIGHT})
+		hit.MouseButton1Click:Connect(function() self:_safe(key, callback) end)
+		return {Set = function(_, val) v.Text = tostring(val) end}
+	end
 	Text(row, key, {Position = U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
 	local v = Text(row, tostring(value), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = UDim2.new(0.5, -8, 1, 0),
 		TextSize = 11, TextColor3 = T.text, TextXAlignment = RIGHT})
