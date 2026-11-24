@@ -45,10 +45,27 @@ local teamESP = {
 		Survivors = "blue",
 		Killer = "red",
 	},
+	survivorHealth = {
+		enabled = false,
+		healthy = "green",
+		injured = "yellow",
+		downed = "red",
+	},
+}
+
+local botTrack = {
+	enabled = false,
+	color = "white",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showDistance = true,
 }
 
 local espData = {}
 local selfEspData = nil
+local botEspData = {}
+local botWatchers = {}
 local highlightFolder = nil
 
 ---------------------------------------------------------------------------
@@ -80,9 +97,23 @@ local function getTeamName(player)
 	return nil
 end
 
+local function getHealthState(char)
+	if not char then return "healthy" end
+	local ok, knocked = pcall(char.GetAttribute, char, "Knocked")
+	if ok and knocked == true then return "downed" end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum and hum.Health < hum.MaxHealth then return "injured" end
+	return "healthy"
+end
+
 local function getPlayerColor(player)
 	if teamESP.enabled then
 		local teamName = getTeamName(player)
+		if teamName == "Survivors" and teamESP.survivorHealth.enabled then
+			local state = getHealthState(player.Character)
+			local colorName = teamESP.survivorHealth[state]
+			if colorName then return COLORS[colorName] or COLORS.white end
+		end
 		if teamName and teamESP.colors[teamName] then
 			return COLORS[teamESP.colors[teamName]] or COLORS.white
 		end
@@ -108,6 +139,15 @@ local function applySelfHighlight(hl)
 	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 end
 
+local function applyBotHighlight(hl)
+	local c = COLORS[botTrack.color] or COLORS.white
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = botTrack.outlineTransparency
+	hl.FillTransparency = botTrack.fillTransparency
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
 local function refreshPlayerHighlights()
 	for player, data in pairs(espData) do
 		if data.highlight then
@@ -119,6 +159,14 @@ end
 local function refreshSelfHighlight()
 	if selfEspData and selfEspData.highlight then
 		applySelfHighlight(selfEspData.highlight)
+	end
+end
+
+local function refreshBotHighlights()
+	for _, data in pairs(botEspData) do
+		if data.highlight then
+			applyBotHighlight(data.highlight)
+		end
 	end
 end
 
@@ -195,6 +243,86 @@ local function removeSelfESP()
 end
 
 ---------------------------------------------------------------------------
+-- Bot ESP lifecycle
+---------------------------------------------------------------------------
+local function removeBotESP(model)
+	local data = botEspData[model]
+	if not data then return end
+	for _, conn in ipairs(data.connections) do
+		conn:Disconnect()
+	end
+	data.connections = nil
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	botEspData[model] = nil
+end
+
+local function createBotESP(model)
+	if botEspData[model] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		connections = {},
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	table.insert(data.connections, model:GetAttributeChangedSignal("RountBot"):Connect(function()
+		if model:GetAttribute("RountBot") ~= true then
+			removeBotESP(model)
+		end
+	end))
+
+	table.insert(data.connections, model.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			removeBotESP(model)
+		end
+	end))
+
+	botEspData[model] = data
+end
+
+local function clearBotWatcher(model)
+	local w = botWatchers[model]
+	if not w then return end
+	if w.attr then w.attr:Disconnect() end
+	if w.ancestry then w.ancestry:Disconnect() end
+	botWatchers[model] = nil
+end
+
+local function watchForBot(model)
+	if botWatchers[model] or botEspData[model] then return end
+	local w = {}
+	w.attr = model:GetAttributeChangedSignal("RountBot"):Connect(function()
+		if model:GetAttribute("RountBot") == true then
+			clearBotWatcher(model)
+			createBotESP(model)
+		end
+	end)
+	w.ancestry = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			clearBotWatcher(model)
+		end
+	end)
+	botWatchers[model] = w
+end
+
+local function scanWorkspaceChild(child)
+	if not child:IsA("Model") then return end
+	if child:GetAttribute("RountBot") == true then
+		createBotESP(child)
+	else
+		watchForBot(child)
+	end
+end
+
+---------------------------------------------------------------------------
 -- Render loop
 ---------------------------------------------------------------------------
 local function updateESP()
@@ -206,6 +334,10 @@ local function updateESP()
 		if selfEspData and selfEspData.highlight then
 			selfEspData.highlight.Enabled = false
 		end
+		for _, data in pairs(botEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+		end
 		return
 	end
 
@@ -213,6 +345,7 @@ local function updateESP()
 	local localHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	local refPos = localHrp and localHrp.Position or camPos
 
+	-- player ESP
 	for player, data in pairs(espData) do
 		local char = player.Character
 		local skip = playerTrack.ignoreSpectator and getTeamName(player) == "Spectator"
@@ -229,6 +362,10 @@ local function updateESP()
 				data.highlight.Adornee = char
 			end
 			data.highlight.Enabled = true
+
+			if teamESP.enabled and teamESP.survivorHealth.enabled and getTeamName(player) == "Survivors" then
+				applyPlayerHighlight(data.highlight, player)
+			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
@@ -258,6 +395,7 @@ local function updateESP()
 		end
 	end
 
+	-- self ESP
 	if selfEspData then
 		local char = LocalPlayer.Character
 		local active = selfTrack.enabled and char
@@ -277,6 +415,47 @@ local function updateESP()
 			if selfEspData.highlight then selfEspData.highlight.Enabled = false end
 		end
 	end
+
+	-- bot ESP
+	for model, data in pairs(botEspData) do
+		local active = botTrack.enabled and model.Parent ~= nil
+
+		if active then
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				applyBotHighlight(data.highlight)
+				data.highlight.Adornee = model
+				data.highlight.Parent = getHighlightParent()
+			end
+			data.highlight.Enabled = true
+		else
+			if data.highlight then data.highlight.Enabled = false end
+		end
+
+		if active and botTrack.textOverlay then
+			local head = model:FindFirstChild("Head")
+			if head then
+				local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
+				if onScreen then
+					local label = model.Name
+					if botTrack.showDistance then
+						local dist = (head.Position - refPos).Magnitude
+						label = label .. " [" .. math.floor(dist) .. "m]"
+					end
+					data.text.Text = label
+					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+					data.text.Color = COLORS[botTrack.color] or COLORS.white
+					data.text.Visible = true
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
 end
 
 local function destroyAll()
@@ -284,6 +463,12 @@ local function destroyAll()
 		removeESP(player)
 	end
 	removeSelfESP()
+	for model in pairs(botEspData) do
+		removeBotESP(model)
+	end
+	for model in pairs(botWatchers) do
+		clearBotWatcher(model)
+	end
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
 		highlightFolder = nil
@@ -494,6 +679,105 @@ local function init(Hub, UI)
 			return { Get = function() return value end, Set = function(_, v) set(v) end }
 		end
 
+		function sub:Track(tName, tState, buildInner, tOnToggle)
+			local sRow = sub:Row(22)
+			local sHit = H.Button(sRow, "", {Name = "Hit", Size = UDim2.fromScale(1, 1)})
+			sHit.MouseEnter:Connect(function() H.tween(sHit, {BackgroundTransparency = 0.35}) end)
+			sHit.MouseLeave:Connect(function() H.tween(sHit, {BackgroundTransparency = 1}) end)
+
+			local iPad = H.Frame(sHit, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1})
+			H.Pad(iPad, 0, 0, 0, 20)
+
+			local sCaret = H.Text(iPad, "[+]", {Position = H.U(8, 0), Size = H.U(24, 22), TextColor3 = T.dim})
+			H.Text(iPad, tName, {Position = H.U(36, 0), Size = UDim2.new(1, -120, 1, 0), TextSize = 11, TextColor3 = T.text})
+
+			local sToggleBox = H.Text(iPad, "[ ]", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -8, 0, 0),
+				Size = H.U(28, 22),
+				TextXAlignment = Enum.TextXAlignment.Right,
+				TextColor3 = T.dim,
+			})
+			local sToggleVal = H.Text(iPad, "off", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -40, 0, 0),
+				Size = H.U(32, 22),
+				TextXAlignment = Enum.TextXAlignment.Right,
+				TextSize = 11,
+				TextColor3 = T.dim,
+			})
+
+			local function sRenderToggle()
+				sToggleBox.Text = tState.enabled and "[x]" or "[ ]"
+				sToggleBox.TextColor3 = tState.enabled and T.white or T.dim
+				sToggleVal.Text = tState.enabled and "on" or "off"
+				sToggleVal.TextColor3 = tState.enabled and T.white or T.dim
+			end
+			sRenderToggle()
+
+			contentOrder = contentOrder + 1
+			local innerContent = H.Frame(content, {
+				Name = "SubTrack_" .. tName,
+				LayoutOrder = contentOrder,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				Visible = false,
+			})
+			H.List(innerContent, 2)
+			local innerOrder = 0
+
+			local inner = {}
+
+			function inner:Choice(label, options, default, callback)
+				innerOrder = innerOrder + 1
+				local iRow = H.Frame(innerContent, {
+					LayoutOrder = innerOrder,
+					Size = UDim2.new(1, 0, 0, 22),
+					BackgroundTransparency = 1,
+				})
+				local index = table.find(options, default) or 1
+				local ipad = H.Frame(iRow, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1})
+				H.Pad(ipad, 0, 0, 0, 40)
+				H.Text(ipad, label, {Position = H.U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
+				local ival = H.Button(ipad, tostring(options[index]), {
+					AnchorPoint = Vector2.new(1, 0),
+					Position = UDim2.new(1, -8, 0, 0),
+					Size = H.U(80, 22),
+					TextXAlignment = Enum.TextXAlignment.Right,
+					FontFace = UI.Fonts.Medium,
+					TextColor3 = T.white,
+					TextSize = 11,
+				})
+				ival.MouseEnter:Connect(function() ival.TextColor3 = T.white end)
+				ival.MouseLeave:Connect(function() ival.TextColor3 = T.mid end)
+				ival.MouseButton1Click:Connect(function()
+					index = (index % #options) + 1
+					ival.Text = tostring(options[index])
+					if callback then pcall(callback, options[index]) end
+				end)
+				return { Get = function() return options[index] end }
+			end
+
+			local sExpanded = false
+			sHit.MouseButton1Click:Connect(function()
+				local mouseX = game:GetService("UserInputService"):GetMouseLocation().X
+				local toggleRegionStart = sRow.AbsolutePosition.X + sRow.AbsoluteSize.X - 80
+				if mouseX >= toggleRegionStart then
+					tState.enabled = not tState.enabled
+					sRenderToggle()
+					if tOnToggle then pcall(tOnToggle, tState.enabled) end
+				else
+					sExpanded = not sExpanded
+					innerContent.Visible = sExpanded
+					sCaret.Text = sExpanded and "[-]" or "[+]"
+				end
+			end)
+
+			buildInner(inner)
+			return tState
+		end
+
 		local expanded = false
 		local function toggleExpand()
 			expanded = not expanded
@@ -517,6 +801,7 @@ local function init(Hub, UI)
 		return state
 	end
 
+	-- team ESP
 	track("team esp", teamESP, function(sub)
 		sub:Choice("spectator", COLOR_NAMES, teamESP.colors.Spectator, function(c)
 			teamESP.colors.Spectator = c
@@ -530,10 +815,28 @@ local function init(Hub, UI)
 			teamESP.colors.Killer = c
 			refreshPlayerHighlights()
 		end)
+
+		sub:Track("health state esp", teamESP.survivorHealth, function(inner)
+			inner:Choice("healthy", COLOR_NAMES, teamESP.survivorHealth.healthy, function(c)
+				teamESP.survivorHealth.healthy = c
+				refreshPlayerHighlights()
+			end)
+			inner:Choice("injured", COLOR_NAMES, teamESP.survivorHealth.injured, function(c)
+				teamESP.survivorHealth.injured = c
+				refreshPlayerHighlights()
+			end)
+			inner:Choice("downed", COLOR_NAMES, teamESP.survivorHealth.downed, function(c)
+				teamESP.survivorHealth.downed = c
+				refreshPlayerHighlights()
+			end)
+		end, function()
+			refreshPlayerHighlights()
+		end)
 	end, function()
 		refreshPlayerHighlights()
 	end)
 
+	-- tracks
 	tab:Section("tracks")
 
 	track("player esp", playerTrack, function(sub)
@@ -582,6 +885,32 @@ local function init(Hub, UI)
 		end, { Step = 0.1 })
 	end)
 
+	track("bot esp", botTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
+			botTrack.color = c
+			refreshBotHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - botTrack.fillTransparency, function(v)
+			botTrack.fillTransparency = 1 - v
+			refreshBotHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - botTrack.outlineTransparency, function(v)
+			botTrack.outlineTransparency = 1 - v
+			refreshBotHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", botTrack.textOverlay, function(on)
+			botTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", botTrack.showDistance, function(on)
+			botTrack.showDistance = on
+		end)
+	end)
+
+	-- connect players
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
 	end
@@ -590,8 +919,14 @@ local function init(Hub, UI)
 	Hub:_track(Players.PlayerAdded:Connect(function(player)
 		createESP(player)
 	end))
-
 	Hub:_track(Players.PlayerRemoving:Connect(removeESP))
+
+	-- scan workspace for bots
+	for _, child in ipairs(workspace:GetChildren()) do
+		scanWorkspaceChild(child)
+	end
+	Hub:_track(workspace.ChildAdded:Connect(scanWorkspaceChild))
+
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
 end
 
