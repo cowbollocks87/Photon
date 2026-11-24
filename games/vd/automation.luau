@@ -377,6 +377,39 @@ local function findKiller()
 	return nil
 end
 
+local function connectAnimator(animator, char)
+	watchedAnimator = animator
+
+	table.insert(parryConns, animator.AnimationPlayed:Connect(function(track)
+		if not autoParry.enabled then return end
+
+		local id = track.Animation and track.Animation.AnimationId or ""
+		local isKnown = M1_ANIMS[id]
+
+		if not isKnown then
+			if track.Length == 0 then task.wait(0.05) end
+			local isHeuristic = track.Priority == Enum.AnimationPriority.Action
+				and track.Length >= 0.8 and track.Length <= 2.0
+				and track.Speed >= 0.8 and track.Speed <= 1.2
+			if not isHeuristic then return end
+		end
+
+		local delayMs = autoParry.delay
+		local function doParry()
+			if not autoParry.enabled then return end
+			if not inParryRange(char) then return end
+			if not killerFacingMe(char) then return end
+			fireParry()
+		end
+
+		if delayMs > 0 then
+			task.delay(delayMs / 1000, doParry)
+		else
+			doParry()
+		end
+	end))
+end
+
 local function setupParryWatcher()
 	teardownParryWatcher()
 	if not autoParry.enabled then return end
@@ -395,35 +428,17 @@ local function setupParryWatcher()
 
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
+
 	local animator = hum:FindFirstChildOfClass("Animator")
-	if not animator then return end
-	watchedAnimator = animator
-
-	table.insert(parryConns, animator.AnimationPlayed:Connect(function(track)
-		if not autoParry.enabled then return end
-
-		local id = track.Animation and track.Animation.AnimationId or ""
-		local isKnown = M1_ANIMS[id]
-		local isHeuristic = not isKnown
-			and track.Priority == Enum.AnimationPriority.Action
-			and track.Length >= 1 and track.Length <= 1.8
-			and track.Speed >= 0.9 and track.Speed <= 1.1
-
-		if not (isKnown or isHeuristic) then return end
-		if not inParryRange(char) then return end
-		if not killerFacingMe(char) then return end
-
-		if autoParry.delay > 0 then
-			local delayMs = autoParry.delay
-			task.delay(delayMs / 1000, function()
-				if not autoParry.enabled then return end
-				if not inParryRange(char) then return end
-				fireParry()
-			end)
-		else
-			fireParry()
-		end
-	end))
+	if animator then
+		connectAnimator(animator, char)
+	else
+		table.insert(parryConns, hum.ChildAdded:Connect(function(child)
+			if child:IsA("Animator") and not watchedAnimator then
+				connectAnimator(child, char)
+			end
+		end))
+	end
 end
 
 ---------------------------------------------------------------------------
@@ -509,7 +524,7 @@ local function init(Hub, UI)
 	Hub:_track(RunService.Heartbeat:Connect(function()
 		if not autoParry.enabled then return end
 		local now = os.clock()
-		if now - lastParryCheck < 2 then return end
+		if now - lastParryCheck < 1 then return end
 		lastParryCheck = now
 
 		local killer = findKiller()
