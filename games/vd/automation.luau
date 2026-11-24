@@ -3,23 +3,11 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 ---------------------------------------------------------------------------
--- Skill check keybind (resolved from game config, fallback Space)
----------------------------------------------------------------------------
-local scKey = Enum.KeyCode.Space
-pcall(function()
-	local KC = require(ReplicatedStorage.Modules.Survivors.KeybindsConfig)
-	local k = KC.binds and KC.binds.skillcheck
-		or KC.defaults and KC.defaults.skillcheck
-		or KC.keys and KC.keys.skillcheck
-	if typeof(k) == "EnumItem" then scKey = k end
-end)
-
----------------------------------------------------------------------------
--- Remote references (needed for event hooks + fallback fire)
+-- Remote references
 ---------------------------------------------------------------------------
 local genRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Generator")
 local genSCEvent = genRemotes:WaitForChild("SkillCheckEvent")
@@ -53,27 +41,17 @@ local autoSC = {
 local renderConn = nil
 
 ---------------------------------------------------------------------------
--- Input simulation — firesignal lets the original Skillcheck-gen
--- script handle zone checking, result firing, cleanup and UI.
--- Fallback fires the remote directly when firesignal is unavailable.
----------------------------------------------------------------------------
-local function pressSkillCheck()
-	local ok = pcall(function()
-		firesignal(UserInputService.InputBegan, {
-			KeyCode = scKey,
-			UserInputType = Enum.UserInputType.Keyboard,
-			UserInputState = Enum.UserInputState.Begin,
-		}, false)
-	end)
-	return ok
-end
-
----------------------------------------------------------------------------
 -- Core — zone detection & auto-fire
 ---------------------------------------------------------------------------
 -- Zone geometry (from decompiled Skillcheck-gen):
 --   Great  goalRot+102 .. goalRot+116   (14°)
 --   Good   goalRot+116 .. goalRot+159   (43°)
+--
+-- Strategy: fire the result remote, then cancel the original tween with
+-- a zero-duration override.  The original script's tween-completion
+-- handler sees PlaybackState.Cancelled and returns early, so it never
+-- fires fail or sets isRepairing=false.  The repair continues and the
+-- player can leave the generator normally.
 
 local function startWatching(resultEvent, genId, generator, sessionId)
 	if renderConn then renderConn:Disconnect() end
@@ -109,19 +87,26 @@ local function startWatching(resultEvent, genId, generator, sessionId)
 		if not inZone then return end
 
 		fired = true
+		local char = LocalPlayer.Character
+		if not char then return end
 
-		local pressed = pressSkillCheck()
-		if not pressed then
-			local char = LocalPlayer.Character
-			if char then
-				local result = target == "great" and "success" or "neutral"
-				local pts = target == "great" and 1 or 0
-				resultEvent:FireServer(result, pts, genId, generator, sessionId, char)
-				task.delay(0.15, function()
-					pcall(function() Check.Visible = false end)
-				end)
-			end
-		end
+		local result = target == "great" and "success" or "neutral"
+		local pts = target == "great" and 1 or 0
+		resultEvent:FireServer(result, pts, genId, generator, sessionId, char)
+
+		-- Cancel the original tween so its completion handler never runs
+		pcall(function()
+			TweenService:Create(Line, TweenInfo.new(0), {Rotation = lr}):Play()
+		end)
+
+		-- Keep check UI visible briefly to show the hit, then clean up
+		task.delay(0.15, function()
+			pcall(function()
+				Check.Visible = false
+				Line.Rotation = 0
+				Goal.Rotation = 0
+			end)
+		end)
 
 		renderConn:Disconnect()
 		renderConn = nil

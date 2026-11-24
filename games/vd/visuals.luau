@@ -6,15 +6,19 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local COLORS = {
-	white  = Color3.new(1, 1, 1),
-	red    = Color3.fromRGB(255, 50, 50),
-	blue   = Color3.fromRGB(50, 120, 255),
-	green  = Color3.fromRGB(50, 255, 100),
-	yellow = Color3.fromRGB(255, 255, 50),
-	purple = Color3.fromRGB(180, 50, 255),
-	cyan   = Color3.fromRGB(50, 255, 255),
+	white     = Color3.new(1, 1, 1),
+	red       = Color3.fromRGB(255, 50, 50),
+	blue      = Color3.fromRGB(50, 120, 255),
+	green     = Color3.fromRGB(50, 255, 100),
+	yellow    = Color3.fromRGB(255, 255, 50),
+	purple    = Color3.fromRGB(180, 50, 255),
+	cyan      = Color3.fromRGB(50, 255, 255),
+	orange    = Color3.fromRGB(255, 150, 30),
+	hotpink   = Color3.fromRGB(255, 50, 150),
+	rose      = Color3.fromRGB(255, 110, 130),
+	buttermilk = Color3.fromRGB(255, 240, 180),
 }
-local COLOR_NAMES = {"white", "red", "blue", "green", "yellow", "purple", "cyan"}
+local COLOR_NAMES = {"white", "red", "blue", "green", "yellow", "purple", "cyan", "orange", "hotpink", "rose", "buttermilk"}
 
 ---------------------------------------------------------------------------
 -- State
@@ -62,10 +66,20 @@ local botTrack = {
 	showDistance = true,
 }
 
+local trapTrack = {
+	enabled = false,
+	color = "orange",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showDistance = true,
+}
+
 local espData = {}
 local selfEspData = nil
 local botEspData = {}
 local botWatchers = {}
+local trapEspData = {}
 local highlightFolder = nil
 
 ---------------------------------------------------------------------------
@@ -175,6 +189,23 @@ local function refreshBotHighlights()
 	for model, data in pairs(botEspData) do
 		if data.highlight then
 			applyBotHighlight(data.highlight, model)
+		end
+	end
+end
+
+local function applyTrapHighlight(hl)
+	local c = COLORS[trapTrack.color] or COLORS.white
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = trapTrack.outlineTransparency
+	hl.FillTransparency = trapTrack.fillTransparency
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshTrapHighlights()
+	for _, data in pairs(trapEspData) do
+		if data.highlight then
+			applyTrapHighlight(data.highlight)
 		end
 	end
 end
@@ -332,6 +363,47 @@ local function scanWorkspaceChild(child)
 end
 
 ---------------------------------------------------------------------------
+-- Bear Trap ESP lifecycle
+---------------------------------------------------------------------------
+local function isTrap(inst)
+	if not inst:IsA("Model") then return false end
+	local name = string.lower(inst.Name)
+	return string.find(name, "bear") ~= nil and string.find(name, "trap") ~= nil
+end
+
+local function removeTrapESP(model)
+	local data = trapEspData[model]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	trapEspData[model] = nil
+end
+
+local function createTrapESP(model)
+	if trapEspData[model] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		conn = nil,
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	data.conn = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then removeTrapESP(model) end
+	end)
+
+	trapEspData[model] = data
+end
+
+---------------------------------------------------------------------------
 -- Render loop
 ---------------------------------------------------------------------------
 local function updateESP()
@@ -344,6 +416,10 @@ local function updateESP()
 			selfEspData.highlight.Enabled = false
 		end
 		for _, data in pairs(botEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+		end
+		for _, data in pairs(trapEspData) do
 			if data.highlight then data.highlight.Enabled = false end
 			if data.text then data.text.Visible = false end
 		end
@@ -469,6 +545,47 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 	end
+
+	-- trap ESP
+	for model, data in pairs(trapEspData) do
+		local active = trapTrack.enabled and model.Parent ~= nil
+
+		if active then
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				applyTrapHighlight(data.highlight)
+				data.highlight.Adornee = model
+				data.highlight.Parent = getHighlightParent()
+			end
+			data.highlight.Enabled = true
+		else
+			if data.highlight then data.highlight.Enabled = false end
+		end
+
+		if active and trapTrack.textOverlay then
+			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 1.5, 0))
+				if onScreen then
+					local label = "[Bear Trap]"
+					if trapTrack.showDistance then
+						local dist = (part.Position - refPos).Magnitude
+						label = label .. " [" .. math.floor(dist) .. "m]"
+					end
+					data.text.Text = label
+					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+					data.text.Color = COLORS[trapTrack.color] or COLORS.white
+					data.text.Visible = true
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
 end
 
 local function destroyAll()
@@ -481,6 +598,9 @@ local function destroyAll()
 	end
 	for model in pairs(botWatchers) do
 		clearBotWatcher(model)
+	end
+	for model in pairs(trapEspData) do
+		removeTrapESP(model)
 	end
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
@@ -929,6 +1049,31 @@ local function init(Hub, UI)
 		end)
 	end)
 
+	track("bear trap esp", trapTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
+			trapTrack.color = c
+			refreshTrapHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - trapTrack.fillTransparency, function(v)
+			trapTrack.fillTransparency = 1 - v
+			refreshTrapHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - trapTrack.outlineTransparency, function(v)
+			trapTrack.outlineTransparency = 1 - v
+			refreshTrapHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
+			trapTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", trapTrack.showDistance, function(on)
+			trapTrack.showDistance = on
+		end)
+	end)
+
 	-- connect players
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
@@ -945,6 +1090,14 @@ local function init(Hub, UI)
 		scanWorkspaceChild(child)
 	end
 	Hub:_track(workspace.ChildAdded:Connect(scanWorkspaceChild))
+
+	-- scan workspace for bear traps
+	for _, desc in ipairs(workspace:GetDescendants()) do
+		if isTrap(desc) then createTrapESP(desc) end
+	end
+	Hub:_track(workspace.DescendantAdded:Connect(function(desc)
+		if isTrap(desc) then createTrapESP(desc) end
+	end))
 
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
 end
