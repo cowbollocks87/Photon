@@ -96,6 +96,10 @@ local autoSC = {
 
 local autoParry = {
 	enabled = false,
+	radius = 14,
+	delay = 80,
+	showRadius = false,
+	faceCheck = true,
 }
 
 local renderConn = nil
@@ -230,7 +234,7 @@ local M1_ANIMS = {
 	["rbxassetid://84926129581106"] = true,
 }
 
-local M1_RANGE = 16
+local FACE_DOT_THRESHOLD = 0.3
 
 local fakeParryInput = {
 	KeyCode = Enum.KeyCode.Unknown,
@@ -264,15 +268,101 @@ local function fireParry()
 	end
 end
 
-local function inM1Range(killerChar)
-	local myRoot = LocalPlayer.Character
-		and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	local kRoot = killerChar
-		and killerChar:FindFirstChild("HumanoidRootPart")
-	if not myRoot or not kRoot then return false end
-	return (myRoot.Position - kRoot.Position).Magnitude <= M1_RANGE
+local function getMyRoot()
+	local char = LocalPlayer.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
 end
 
+local function getKillerRoot(killerChar)
+	return killerChar and killerChar:FindFirstChild("HumanoidRootPart")
+end
+
+local function inParryRange(killerChar)
+	local myRoot = getMyRoot()
+	local kRoot = getKillerRoot(killerChar)
+	if not myRoot or not kRoot then return false end
+	return (myRoot.Position - kRoot.Position).Magnitude <= autoParry.radius
+end
+
+local function killerFacingMe(killerChar)
+	if not autoParry.faceCheck then return true end
+	local myRoot = getMyRoot()
+	local kRoot = getKillerRoot(killerChar)
+	if not myRoot or not kRoot then return false end
+	local toMe = (myRoot.Position - kRoot.Position) * Vector3.new(1, 0, 1)
+	if toMe.Magnitude < 0.5 then return true end
+	local look = kRoot.CFrame.LookVector * Vector3.new(1, 0, 1)
+	if look.Magnitude < 0.01 then return true end
+	return toMe.Unit:Dot(look.Unit) > FACE_DOT_THRESHOLD
+end
+
+---------------------------------------------------------------------------
+-- Radius visualization
+---------------------------------------------------------------------------
+local radiusCircle = nil
+
+local function createRadiusCircle()
+	if radiusCircle then return end
+	radiusCircle = Drawing.new("Circle")
+	radiusCircle.Color = Color3.fromRGB(255, 150, 30)
+	radiusCircle.Thickness = 1.5
+	radiusCircle.Transparency = 0.6
+	radiusCircle.Filled = false
+	radiusCircle.Visible = false
+end
+
+local function destroyRadiusCircle()
+	if radiusCircle then
+		radiusCircle:Remove()
+		radiusCircle = nil
+	end
+end
+
+local radiusRenderConn = nil
+
+local function startRadiusRender()
+	if radiusRenderConn then return end
+	createRadiusCircle()
+	radiusRenderConn = RunService.RenderStepped:Connect(function()
+		if not autoParry.showRadius or not autoParry.enabled then
+			if radiusCircle then radiusCircle.Visible = false end
+			return
+		end
+		local myRoot = getMyRoot()
+		if not myRoot then
+			radiusCircle.Visible = false
+			return
+		end
+		local cam = workspace.CurrentCamera
+		local pos, onScreen = cam:WorldToViewportPoint(myRoot.Position)
+		if not onScreen then
+			radiusCircle.Visible = false
+			return
+		end
+		local edge = cam:WorldToViewportPoint(
+			myRoot.Position + cam.CFrame.RightVector * autoParry.radius
+		)
+		local screenRadius = (
+			Vector2.new(edge.X, edge.Y) - Vector2.new(pos.X, pos.Y)
+		).Magnitude
+		radiusCircle.Position = Vector2.new(pos.X, pos.Y)
+		radiusCircle.Radius = math.max(screenRadius, 4)
+		radiusCircle.NumSides = math.clamp(math.floor(screenRadius * 0.8), 24, 64)
+		radiusCircle.Visible = true
+	end)
+end
+
+local function stopRadiusRender()
+	if radiusRenderConn then
+		radiusRenderConn:Disconnect()
+		radiusRenderConn = nil
+	end
+	if radiusCircle then radiusCircle.Visible = false end
+end
+
+---------------------------------------------------------------------------
+-- Parry watcher
+---------------------------------------------------------------------------
 local parryConns = {}
 local watchingKiller = nil
 
@@ -325,9 +415,19 @@ local function setupParryWatcher()
 			and track.Speed >= 0.9 and track.Speed <= 1.1
 
 		if not (isKnown or isHeuristic) then return end
-		if not inM1Range(char) then return end
+		if not inParryRange(char) then return end
+		if not killerFacingMe(char) then return end
 
-		fireParry()
+		if autoParry.delay > 0 then
+			local delayMs = autoParry.delay
+			task.delay(delayMs / 1000, function()
+				if not autoParry.enabled then return end
+				if not inParryRange(char) then return end
+				fireParry()
+			end)
+		else
+			fireParry()
+		end
 	end))
 end
 
@@ -382,9 +482,32 @@ local function init(Hub, UI)
 		Hub:Log(on and "auto parry on" or "auto parry off")
 		if on then
 			setupParryWatcher()
+			if autoParry.showRadius then startRadiusRender() end
 		else
 			teardownParryWatcher()
+			stopRadiusRender()
 		end
+	end)
+
+	tab:Slider("radius", 8, 24, autoParry.radius, function(v)
+		autoParry.radius = v
+	end, { Step = 1, Suffix = " studs" })
+
+	tab:Slider("delay", 0, 300, autoParry.delay, function(v)
+		autoParry.delay = v
+	end, { Step = 10, Suffix = " ms" })
+
+	tab:Toggle("show radius", false, function(on)
+		autoParry.showRadius = on
+		if on and autoParry.enabled then
+			startRadiusRender()
+		else
+			stopRadiusRender()
+		end
+	end)
+
+	tab:Toggle("facing check", true, function(on)
+		autoParry.faceCheck = on
 	end)
 
 	local lastParryCheck = 0
