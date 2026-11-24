@@ -100,6 +100,7 @@ local autoParry = {
 	delay = 80,
 	showRadius = false,
 	faceCheck = true,
+	faceCone = 70,
 }
 
 local renderConn = nil
@@ -234,7 +235,6 @@ local M1_ANIMS = {
 	["rbxassetid://84926129581106"] = true,
 }
 
-local FACE_DOT_THRESHOLD = 0.3
 
 local fakeParryInput = {
 	KeyCode = Enum.KeyCode.Unknown,
@@ -293,7 +293,7 @@ local function killerFacingMe(killerChar)
 	if toMe.Magnitude < 0.5 then return true end
 	local look = kRoot.CFrame.LookVector * Vector3.new(1, 0, 1)
 	if look.Magnitude < 0.01 then return true end
-	return toMe.Unit:Dot(look.Unit) > FACE_DOT_THRESHOLD
+	return toMe.Unit:Dot(look.Unit) > math.cos(math.rad(autoParry.faceCone))
 end
 
 ---------------------------------------------------------------------------
@@ -358,12 +358,18 @@ end
 local parryConns = {}
 local watchingKiller = nil
 local watchedAnimator = nil
+local PARRY_WATCH_WINDOW = 0.5
+local parryWatchConn = nil
 
 local function teardownParryWatcher()
 	for _, c in ipairs(parryConns) do
 		pcall(c.Disconnect, c)
 	end
 	table.clear(parryConns)
+	if parryWatchConn then
+		parryWatchConn:Disconnect()
+		parryWatchConn = nil
+	end
 	watchingKiller = nil
 	watchedAnimator = nil
 end
@@ -394,18 +400,35 @@ local function connectAnimator(animator, char)
 			if not isHeuristic then return end
 		end
 
-		local delayMs = autoParry.delay
-		local function doParry()
+		local function startWatch()
 			if not autoParry.enabled then return end
-			if not inParryRange(char) then return end
-			if not killerFacingMe(char) then return end
-			fireParry()
+
+			if inParryRange(char) and killerFacingMe(char) then
+				fireParry()
+				return
+			end
+
+			if parryWatchConn then parryWatchConn:Disconnect() end
+			local watchStart = os.clock()
+			parryWatchConn = RunService.RenderStepped:Connect(function()
+				if not autoParry.enabled or os.clock() - watchStart > PARRY_WATCH_WINDOW then
+					parryWatchConn:Disconnect()
+					parryWatchConn = nil
+					return
+				end
+				if not inParryRange(char) then return end
+				if not killerFacingMe(char) then return end
+				parryWatchConn:Disconnect()
+				parryWatchConn = nil
+				fireParry()
+			end)
 		end
 
+		local delayMs = autoParry.delay
 		if delayMs > 0 then
-			task.delay(delayMs / 1000, doParry)
+			task.delay(delayMs / 1000, startWatch)
 		else
-			doParry()
+			startWatch()
 		end
 	end))
 end
@@ -519,6 +542,10 @@ local function init(Hub, UI)
 	tab:Toggle("facing check", true, function(on)
 		autoParry.faceCheck = on
 	end)
+
+	tab:Slider("facing cone", 30, 120, autoParry.faceCone, function(v)
+		autoParry.faceCone = v
+	end, { Step = 10, Suffix = "\194\176" })
 
 	local lastParryCheck = 0
 	Hub:_track(RunService.Heartbeat:Connect(function()
