@@ -42,7 +42,7 @@ local teamESP = {
 	enabled = false,
 	colors = {
 		Spectator = "white",
-		Survivor = "blue",
+		Survivors = "blue",
 		Killer = "red",
 	},
 }
@@ -522,8 +522,8 @@ local function init(Hub, UI)
 			teamESP.colors.Spectator = c
 			refreshPlayerHighlights()
 		end)
-		sub:Choice("survivor", COLOR_NAMES, teamESP.colors.Survivor, function(c)
-			teamESP.colors.Survivor = c
+		sub:Choice("survivors", COLOR_NAMES, teamESP.colors.Survivors, function(c)
+			teamESP.colors.Survivors = c
 			refreshPlayerHighlights()
 		end)
 		sub:Choice("killer", COLOR_NAMES, teamESP.colors.Killer, function(c)
