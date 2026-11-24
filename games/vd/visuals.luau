@@ -16,6 +16,9 @@ local COLORS = {
 }
 local COLOR_NAMES = {"white", "red", "blue", "green", "yellow", "purple", "cyan"}
 
+---------------------------------------------------------------------------
+-- State
+---------------------------------------------------------------------------
 local masterEnabled = false
 
 local playerTrack = {
@@ -25,11 +28,32 @@ local playerTrack = {
 	outlineTransparency = 0,
 	textOverlay = true,
 	showDistance = true,
+	ignoreSpectator = false,
+}
+
+local selfTrack = {
+	enabled = false,
+	color = "white",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+}
+
+local teamESP = {
+	enabled = false,
+	colors = {
+		Spectator = "white",
+		Survivor = "blue",
+		Killer = "red",
+	},
 }
 
 local espData = {}
+local selfEspData = nil
 local highlightFolder = nil
 
+---------------------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------------------
 local function getHighlightParent()
 	if highlightFolder and highlightFolder.Parent then return highlightFolder end
 	highlightFolder = Instance.new("Folder")
@@ -50,8 +74,24 @@ local function getHighlightParent()
 	return highlightFolder
 end
 
-local function applyHighlightSettings(hl)
-	local c = COLORS[playerTrack.color] or COLORS.white
+local function getTeamName(player)
+	local ok, team = pcall(function() return player.Team end)
+	if ok and team then return team.Name end
+	return nil
+end
+
+local function getPlayerColor(player)
+	if teamESP.enabled then
+		local teamName = getTeamName(player)
+		if teamName and teamESP.colors[teamName] then
+			return COLORS[teamESP.colors[teamName]] or COLORS.white
+		end
+	end
+	return COLORS[playerTrack.color] or COLORS.white
+end
+
+local function applyPlayerHighlight(hl, player)
+	local c = getPlayerColor(player)
 	hl.OutlineColor = c
 	hl.FillColor = c
 	hl.OutlineTransparency = playerTrack.outlineTransparency
@@ -59,18 +99,41 @@ local function applyHighlightSettings(hl)
 	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 end
 
-local function refreshHighlights()
-	for _, data in pairs(espData) do
+local function applySelfHighlight(hl)
+	local c = COLORS[selfTrack.color] or COLORS.white
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = selfTrack.outlineTransparency
+	hl.FillTransparency = selfTrack.fillTransparency
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshPlayerHighlights()
+	for player, data in pairs(espData) do
 		if data.highlight then
-			applyHighlightSettings(data.highlight)
+			applyPlayerHighlight(data.highlight, player)
 		end
 	end
 end
 
+local function refreshSelfHighlight()
+	if selfEspData and selfEspData.highlight then
+		applySelfHighlight(selfEspData.highlight)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Player ESP lifecycle
+---------------------------------------------------------------------------
 local function createESP(player)
 	if player == LocalPlayer then return end
-	local data = {}
-	data.text = Drawing.new("Text")
+	if espData[player] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		connections = {},
+	}
 	data.text.Visible = false
 	data.text.Center = true
 	data.text.Size = 13
@@ -78,30 +141,70 @@ local function createESP(player)
 	data.text.Color = Color3.new(1, 1, 1)
 	data.text.Outline = true
 	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	table.insert(data.connections, player.CharacterAdded:Connect(function(char)
+		if data.highlight then
+			data.highlight.Adornee = char
+		end
+	end))
+
+	table.insert(data.connections, player:GetPropertyChangedSignal("Team"):Connect(function()
+		if data.highlight then
+			applyPlayerHighlight(data.highlight, player)
+		end
+	end))
+
 	espData[player] = data
 end
 
 local function removeESP(player)
 	local data = espData[player]
 	if not data then return end
+	for _, conn in ipairs(data.connections) do
+		conn:Disconnect()
+	end
+	data.connections = nil
 	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
 	if data.text then pcall(data.text.Remove, data.text) end
 	espData[player] = nil
 end
 
-local function onCharacterAdded(player)
-	local data = espData[player]
-	if not data then return end
-	if data.highlight then
-		data.highlight.Adornee = player.Character
-	end
+---------------------------------------------------------------------------
+-- Self ESP lifecycle
+---------------------------------------------------------------------------
+local function createSelfESP()
+	if selfEspData then return end
+	selfEspData = {
+		highlight = nil,
+		connections = {},
+	}
+	table.insert(selfEspData.connections, LocalPlayer.CharacterAdded:Connect(function(char)
+		if selfEspData and selfEspData.highlight then
+			selfEspData.highlight.Adornee = char
+		end
+	end))
 end
 
+local function removeSelfESP()
+	if not selfEspData then return end
+	for _, conn in ipairs(selfEspData.connections) do
+		conn:Disconnect()
+	end
+	if selfEspData.highlight then pcall(selfEspData.highlight.Destroy, selfEspData.highlight) end
+	selfEspData = nil
+end
+
+---------------------------------------------------------------------------
+-- Render loop
+---------------------------------------------------------------------------
 local function updateESP()
 	if not masterEnabled then
 		for _, data in pairs(espData) do
 			if data.highlight then data.highlight.Enabled = false end
 			if data.text then data.text.Visible = false end
+		end
+		if selfEspData and selfEspData.highlight then
+			selfEspData.highlight.Enabled = false
 		end
 		return
 	end
@@ -112,12 +215,13 @@ local function updateESP()
 
 	for player, data in pairs(espData) do
 		local char = player.Character
-		local active = playerTrack.enabled and char
+		local skip = playerTrack.ignoreSpectator and getTeamName(player) == "Spectator"
+		local active = playerTrack.enabled and char and not skip
 
 		if active then
 			if not data.highlight then
 				data.highlight = Instance.new("Highlight")
-				applyHighlightSettings(data.highlight)
+				applyPlayerHighlight(data.highlight, player)
 				data.highlight.Adornee = char
 				data.highlight.Parent = getHighlightParent()
 			end
@@ -141,7 +245,7 @@ local function updateESP()
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = COLORS[playerTrack.color] or COLORS.white
+					data.text.Color = getPlayerColor(player)
 					data.text.Visible = true
 				else
 					data.text.Visible = false
@@ -153,12 +257,33 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 	end
+
+	if selfEspData then
+		local char = LocalPlayer.Character
+		local active = selfTrack.enabled and char
+
+		if active then
+			if not selfEspData.highlight then
+				selfEspData.highlight = Instance.new("Highlight")
+				applySelfHighlight(selfEspData.highlight)
+				selfEspData.highlight.Adornee = char
+				selfEspData.highlight.Parent = getHighlightParent()
+			end
+			if selfEspData.highlight.Adornee ~= char then
+				selfEspData.highlight.Adornee = char
+			end
+			selfEspData.highlight.Enabled = true
+		else
+			if selfEspData.highlight then selfEspData.highlight.Enabled = false end
+		end
+	end
 end
 
 local function destroyAll()
 	for player in pairs(espData) do
 		removeESP(player)
 	end
+	removeSelfESP()
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
 		highlightFolder = nil
@@ -182,9 +307,7 @@ local function init(Hub, UI)
 		Hub:Log(on and "esp enabled" or "esp disabled")
 	end)
 
-	-- track builder: creates a collapsible toggle row with sub-settings
-	local function track(name, state, buildContent)
-		-- header row
+	local function track(name, state, buildContent, onToggle)
 		tab.Order = tab.Order + 1
 		local headerOrder = tab.Order
 		local row = H.Frame(tab.Page, {
@@ -224,7 +347,6 @@ local function init(Hub, UI)
 		end
 		renderToggle()
 
-		-- content container
 		tab.Order = tab.Order + 1
 		local content = H.Frame(tab.Page, {
 			Name = "Track_" .. name .. "_Content",
@@ -234,10 +356,9 @@ local function init(Hub, UI)
 			BackgroundTransparency = 1,
 			Visible = false,
 		})
-		local contentLayout = H.List(content, 2)
+		H.List(content, 2)
 		local contentOrder = 0
 
-		-- sub-widget builders
 		local sub = {}
 
 		function sub:Row(h)
@@ -386,6 +507,7 @@ local function init(Hub, UI)
 			if mouseX >= toggleRegionStart then
 				state.enabled = not state.enabled
 				renderToggle()
+				if onToggle then pcall(onToggle, state.enabled) end
 			else
 				toggleExpand()
 			end
@@ -395,22 +517,39 @@ local function init(Hub, UI)
 		return state
 	end
 
-	-- player esp track
+	track("team esp", teamESP, function(sub)
+		sub:Choice("spectator", COLOR_NAMES, teamESP.colors.Spectator, function(c)
+			teamESP.colors.Spectator = c
+			refreshPlayerHighlights()
+		end)
+		sub:Choice("survivor", COLOR_NAMES, teamESP.colors.Survivor, function(c)
+			teamESP.colors.Survivor = c
+			refreshPlayerHighlights()
+		end)
+		sub:Choice("killer", COLOR_NAMES, teamESP.colors.Killer, function(c)
+			teamESP.colors.Killer = c
+			refreshPlayerHighlights()
+		end)
+	end, function()
+		refreshPlayerHighlights()
+	end)
+
 	tab:Section("tracks")
+
 	track("player esp", playerTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, playerTrack.color, function(c)
 			playerTrack.color = c
-			refreshHighlights()
+			refreshPlayerHighlights()
 		end)
 
 		sub:Slider("fill opacity", 0, 1, 1 - playerTrack.fillTransparency, function(v)
 			playerTrack.fillTransparency = 1 - v
-			refreshHighlights()
+			refreshPlayerHighlights()
 		end, { Step = 0.1 })
 
 		sub:Slider("outline opacity", 0, 1, 1 - playerTrack.outlineTransparency, function(v)
 			playerTrack.outlineTransparency = 1 - v
-			refreshHighlights()
+			refreshPlayerHighlights()
 		end, { Step = 0.1 })
 
 		sub:Toggle("text overlay", playerTrack.textOverlay, function(on)
@@ -420,27 +559,39 @@ local function init(Hub, UI)
 		sub:Toggle("show distance", playerTrack.showDistance, function(on)
 			playerTrack.showDistance = on
 		end)
+
+		sub:Toggle("ignore spectator", playerTrack.ignoreSpectator, function(on)
+			playerTrack.ignoreSpectator = on
+		end)
 	end)
 
-	-- connect players
+	track("self esp", selfTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
+			selfTrack.color = c
+			refreshSelfHighlight()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
+			selfTrack.fillTransparency = 1 - v
+			refreshSelfHighlight()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - selfTrack.outlineTransparency, function(v)
+			selfTrack.outlineTransparency = 1 - v
+			refreshSelfHighlight()
+		end, { Step = 0.1 })
+	end)
+
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
-		if player ~= LocalPlayer then
-			Hub:_track(player.CharacterAdded:Connect(function()
-				onCharacterAdded(player)
-			end))
-		end
 	end
+	createSelfESP()
 
 	Hub:_track(Players.PlayerAdded:Connect(function(player)
 		createESP(player)
-		Hub:_track(player.CharacterAdded:Connect(function()
-			onCharacterAdded(player)
-		end))
 	end))
 
 	Hub:_track(Players.PlayerRemoving:Connect(removeESP))
-
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
 end
 
