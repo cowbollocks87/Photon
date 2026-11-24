@@ -44,13 +44,28 @@ pcall(function()
 	if typeof(k) == "EnumItem" then scKey = k end
 
 	if KC.matches then
-		local orig = KC.matches
-		KC.matches = function(action, input)
-			if action == "skillcheck" and type(input) == "table" and rawget(input, "_auto") then
-				return true
+		local origFn = KC.matches
+		local hooked = false
+
+		pcall(function()
+			origFn = hookfunction(KC.matches, function(action, input)
+				if action == "skillcheck" and type(input) == "table" and rawget(input, "_auto") then
+					return true
+				end
+				return origFn(action, input)
+			end)
+			hooked = true
+		end)
+
+		if not hooked then
+			KC.matches = function(action, input)
+				if action == "skillcheck" and type(input) == "table" and rawget(input, "_auto") then
+					return true
+				end
+				return origFn(action, input)
 			end
-			return orig(action, input)
 		end
+
 		kcHooked = true
 	end
 end)
@@ -67,41 +82,48 @@ local autoSC = {
 local renderConn = nil
 
 ---------------------------------------------------------------------------
--- Input simulation — three methods, tried in order
+-- Input simulation
 ---------------------------------------------------------------------------
-
--- Pseudo-gaussian: sum of 3 uniforms / 3 → clusters near center
 local function bellRand()
 	return (math.random() + math.random() + math.random()) / 3
 end
 
+local fakeInput = {
+	KeyCode = scKey,
+	UserInputType = Enum.UserInputType.Keyboard,
+	UserInputState = Enum.UserInputState.Begin,
+	_auto = true,
+}
+
 local function tryKeypress()
-	local ok = pcall(function()
+	return pcall(function()
 		keypress(scKey.Value)
 		task.defer(function() pcall(keyrelease, scKey.Value) end)
 	end)
-	return ok
+end
+
+local function tryGetConnections()
+	if not kcHooked then return false end
+	return pcall(function()
+		for _, conn in ipairs(getconnections(UserInputService.InputBegan)) do
+			conn:Fire(fakeInput, false)
+		end
+	end)
 end
 
 local function tryFiresignal()
 	if not kcHooked then return false end
-	local ok = pcall(function()
-		firesignal(UserInputService.InputBegan, {
-			KeyCode = scKey,
-			UserInputType = Enum.UserInputType.Keyboard,
-			UserInputState = Enum.UserInputState.Begin,
-			_auto = true,
-		}, false)
+	return pcall(function()
+		firesignal(UserInputService.InputBegan, fakeInput, false)
 	end)
-	return ok
 end
 
-local function directFire(resultEvent, genId, generator, sessionId, target)
+local function directFire(resultEvent, gen, genPoint, sessionId, target)
 	local char = LocalPlayer.Character
 	if not char then return end
 	local result = target == "great" and "success" or "neutral"
 	local pts = target == "great" and 1 or 0
-	resultEvent:FireServer(result, pts, genId, generator, sessionId, char)
+	resultEvent:FireServer(result, pts, gen, genPoint, sessionId, char)
 	pcall(function()
 		TweenService:Create(Line, TweenInfo.new(0), {Rotation = Line.Rotation}):Play()
 	end)
@@ -115,19 +137,18 @@ local function directFire(resultEvent, genId, generator, sessionId, target)
 end
 
 ---------------------------------------------------------------------------
--- Core — zone detection & auto-fire
+-- Core
 ---------------------------------------------------------------------------
--- Zone geometry (from decompiled Skillcheck-gen):
---   Great  goalRot+102 .. goalRot+116   (14°)
---   Good   goalRot+116 .. goalRot+159   (43°)
+-- Zone geometry (confirmed via Cobalt RSpy + decompile):
+--   Great  goalRot+102 .. goalRot+116   (14° window)  → "success", 1
+--   Good   goalRot+116 .. goalRot+159   (43° window)  → "neutral", 0
+--   Fail   everywhere else                             → "fail", -10
 --
--- Strategy: pick a random landing point within the target zone so the
--- needle stops at a different rotation every check.  Try keypress first
--- (real OS input → original handler runs → sounds + visuals), then
--- firesignal with a KeybindsConfig.matches hook, then direct remote
--- fire + tween cancel as the guaranteed fallback.
+-- Input chain: keypress → getconnections:Fire → firesignal → direct
+-- remote fire.  Methods 1-3 trigger the original handleSkillCheck which
+-- plays sound cues and visual feedback.  Method 4 is a silent fallback.
 
-local function startWatching(resultEvent, genId, generator, sessionId)
+local function startWatching(resultEvent, gen, genPoint, sessionId)
 	if renderConn then renderConn:Disconnect() end
 
 	local roll = math.random(1, 100)
@@ -150,7 +171,6 @@ local function startWatching(resultEvent, genId, generator, sessionId)
 		end
 		if not Check.Visible then return end
 
-		-- First visible frame: pick random landing point in the zone
 		if not targetRot then
 			local gr = Goal.Rotation
 			if target == "great" then
@@ -164,21 +184,19 @@ local function startWatching(resultEvent, genId, generator, sessionId)
 
 		fired = true
 
-		-- Try native keypress → firesignal with hook → direct fire
-		local inputSent = tryKeypress() or tryFiresignal()
+		local inputSent = tryKeypress()
+			or tryGetConnections()
+			or tryFiresignal()
 
 		if inputSent then
-			-- Safety net: if the original handler didn't process within 0.2s
-			-- (Check still visible), fire the direct fallback before the
-			-- tween completes and the game fires fail
-			local re, gid, gen, sid, tgt = resultEvent, genId, generator, sessionId, target
+			local re, g, gp, sid, tgt = resultEvent, gen, genPoint, sessionId, target
 			task.delay(0.2, function()
 				if Check.Visible and autoSC.enabled then
-					directFire(re, gid, gen, sid, tgt)
+					directFire(re, g, gp, sid, tgt)
 				end
 			end)
 		else
-			directFire(resultEvent, genId, generator, sessionId, target)
+			directFire(resultEvent, gen, genPoint, sessionId, target)
 		end
 
 		renderConn:Disconnect()
