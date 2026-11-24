@@ -297,88 +297,50 @@ local function killerFacingMe(killerChar)
 end
 
 ---------------------------------------------------------------------------
--- Radius visualization — world-space ground circle
+-- Radius visualization — world-space cylinder Part
 ---------------------------------------------------------------------------
-local CIRCLE_SEGMENTS = 40
-local CIRCLE_COLOR = Color3.fromRGB(255, 150, 30)
-local circleLines = {}
-
-local function createCircleLines()
-	if #circleLines > 0 then return end
-	for i = 1, CIRCLE_SEGMENTS do
-		local line = Drawing.new("Line")
-		line.Color = CIRCLE_COLOR
-		line.Thickness = 1.5
-		line.Transparency = 0.6
-		line.Visible = false
-		circleLines[i] = line
-	end
-end
-
-local function destroyCircleLines()
-	for _, line in ipairs(circleLines) do
-		line:Remove()
-	end
-	table.clear(circleLines)
-end
-
-local function hideCircleLines()
-	for _, line in ipairs(circleLines) do
-		line.Visible = false
-	end
-end
-
+local radiusPart = nil
 local radiusRenderConn = nil
+
+local function createRadiusPart()
+	if radiusPart then return end
+	radiusPart = Instance.new("Part")
+	radiusPart.Name = "PhotonRadius"
+	radiusPart.Shape = Enum.PartType.Cylinder
+	radiusPart.Anchored = true
+	radiusPart.CanCollide = false
+	radiusPart.CanQuery = false
+	radiusPart.CastShadow = false
+	radiusPart.Material = Enum.Material.Neon
+	radiusPart.Color = Color3.fromRGB(255, 150, 30)
+	radiusPart.Transparency = 0.65
+	radiusPart.Parent = workspace
+end
+
+local function destroyRadiusPart()
+	if radiusPart then
+		radiusPart:Destroy()
+		radiusPart = nil
+	end
+end
 
 local function startRadiusRender()
 	if radiusRenderConn then return end
-	createCircleLines()
+	createRadiusPart()
 	radiusRenderConn = RunService.RenderStepped:Connect(function()
 		if not autoParry.showRadius or not autoParry.enabled then
-			hideCircleLines()
+			if radiusPart then radiusPart.Transparency = 1 end
 			return
 		end
 		local myRoot = getMyRoot()
 		if not myRoot then
-			hideCircleLines()
+			if radiusPart then radiusPart.Transparency = 1 end
 			return
 		end
-		local cam = workspace.CurrentCamera
-		local center = myRoot.Position
-		local r = autoParry.radius
-		local step = (2 * math.pi) / CIRCLE_SEGMENTS
-		local prevScreen = nil
-		local prevOn = false
-
-		for i = 1, CIRCLE_SEGMENTS do
-			local angle = step * i
-			local worldPt = center + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
-			local sp, onScreen = cam:WorldToViewportPoint(worldPt)
-			local curScreen = Vector2.new(sp.X, sp.Y)
-
-			if i == 1 then
-				prevScreen = curScreen
-				prevOn = onScreen
-
-				local a0 = step * CIRCLE_SEGMENTS
-				local wp0 = center + Vector3.new(math.cos(a0) * r, 0, math.sin(a0) * r)
-				local sp0, on0 = cam:WorldToViewportPoint(wp0)
-				prevScreen = Vector2.new(sp0.X, sp0.Y)
-				prevOn = on0
-			end
-
-			local line = circleLines[i]
-			if prevOn or onScreen then
-				line.From = prevScreen
-				line.To = curScreen
-				line.Visible = true
-			else
-				line.Visible = false
-			end
-
-			prevScreen = curScreen
-			prevOn = onScreen
-		end
+		local d = autoParry.radius * 2
+		radiusPart.Size = Vector3.new(0.05, d, d)
+		radiusPart.CFrame = CFrame.new(myRoot.Position) * CFrame.Angles(0, 0, math.rad(90))
+		radiusPart.Transparency = 0.65
 	end)
 end
 
@@ -387,7 +349,7 @@ local function stopRadiusRender()
 		radiusRenderConn:Disconnect()
 		radiusRenderConn = nil
 	end
-	hideCircleLines()
+	destroyRadiusPart()
 end
 
 ---------------------------------------------------------------------------
@@ -395,6 +357,7 @@ end
 ---------------------------------------------------------------------------
 local parryConns = {}
 local watchingKiller = nil
+local watchedAnimator = nil
 
 local function teardownParryWatcher()
 	for _, c in ipairs(parryConns) do
@@ -402,6 +365,7 @@ local function teardownParryWatcher()
 	end
 	table.clear(parryConns)
 	watchingKiller = nil
+	watchedAnimator = nil
 end
 
 local function findKiller()
@@ -433,6 +397,7 @@ local function setupParryWatcher()
 	if not hum then return end
 	local animator = hum:FindFirstChildOfClass("Animator")
 	if not animator then return end
+	watchedAnimator = animator
 
 	table.insert(parryConns, animator.AnimationPlayed:Connect(function(track)
 		if not autoParry.enabled then return end
@@ -546,8 +511,19 @@ local function init(Hub, UI)
 		local now = os.clock()
 		if now - lastParryCheck < 2 then return end
 		lastParryCheck = now
+
 		local killer = findKiller()
 		if killer ~= watchingKiller then
+			setupParryWatcher()
+			return
+		end
+
+		if not killer then return end
+		local char = killer.Character
+		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local anim = hum and hum:FindFirstChildOfClass("Animator")
+		if anim ~= watchedAnimator then
 			setupParryWatcher()
 		end
 	end))
