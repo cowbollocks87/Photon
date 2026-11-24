@@ -12,6 +12,8 @@ local FILES = {
 	["shared/utils/Trove"]  = "shared/utils/Trove.luau",
 	["shared/ui"]           = "shared/ui/init.luau",
 	["shared/home"]         = "shared/home.luau",
+	["games/vd"]            = "games/vd/init.luau",
+	["games/vd/visuals"]    = "games/vd/visuals.luau",
 }
 
 local vinstIsA = function(_, className)
