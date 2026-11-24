@@ -3,10 +3,23 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 ---------------------------------------------------------------------------
--- Remote references
+-- Skill check keybind (resolved from game config, fallback Space)
+---------------------------------------------------------------------------
+local scKey = Enum.KeyCode.Space
+pcall(function()
+	local KC = require(ReplicatedStorage.Modules.Survivors.KeybindsConfig)
+	local k = KC.binds and KC.binds.skillcheck
+		or KC.defaults and KC.defaults.skillcheck
+		or KC.keys and KC.keys.skillcheck
+	if typeof(k) == "EnumItem" then scKey = k end
+end)
+
+---------------------------------------------------------------------------
+-- Remote references (needed for event hooks + fallback fire)
 ---------------------------------------------------------------------------
 local genRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Generator")
 local genSCEvent = genRemotes:WaitForChild("SkillCheckEvent")
@@ -34,10 +47,26 @@ local Goal = Check:WaitForChild("Goal")
 local autoSC = {
 	enabled = false,
 	mode = "great",
+	rate = 100,
 }
 
 local renderConn = nil
-local pendingCheck = nil
+
+---------------------------------------------------------------------------
+-- Input simulation — firesignal lets the original Skillcheck-gen
+-- script handle zone checking, result firing, cleanup and UI.
+-- Fallback fires the remote directly when firesignal is unavailable.
+---------------------------------------------------------------------------
+local function pressSkillCheck()
+	local ok = pcall(function()
+		firesignal(UserInputService.InputBegan, {
+			KeyCode = scKey,
+			UserInputType = Enum.UserInputType.Keyboard,
+			UserInputState = Enum.UserInputState.Begin,
+		}, false)
+	end)
+	return ok
+end
 
 ---------------------------------------------------------------------------
 -- Core — zone detection & auto-fire
@@ -45,21 +74,24 @@ local pendingCheck = nil
 -- Zone geometry (from decompiled Skillcheck-gen):
 --   Great  goalRot+102 .. goalRot+116   (14°)
 --   Good   goalRot+116 .. goalRot+159   (43°)
--- Line tweens 0→360 linearly; RenderStepped fires the result the
--- first frame the needle enters the target zone.
 
 local function startWatching(resultEvent, genId, generator, sessionId)
 	if renderConn then renderConn:Disconnect() end
 
-	pendingCheck = {
-		event = resultEvent,
-		genId = genId,
-		gen = generator,
-		session = sessionId,
-	}
+	local roll = math.random(1, 100)
+	local target
+	if autoSC.mode == "great" then
+		target = roll <= autoSC.rate and "great" or "good"
+	else
+		target = roll <= autoSC.rate and "good" or "skip"
+	end
+
+	if target == "skip" then return end
+
+	local fired = false
 
 	renderConn = RunService.RenderStepped:Connect(function()
-		if not autoSC.enabled or not pendingCheck then
+		if not autoSC.enabled or fired then
 			if renderConn then renderConn:Disconnect(); renderConn = nil end
 			return
 		end
@@ -68,42 +100,29 @@ local function startWatching(resultEvent, genId, generator, sessionId)
 		local lr = Line.Rotation
 		local gr = Goal.Rotation
 		local inZone
-		if autoSC.mode == "great" then
+		if target == "great" then
 			inZone = lr >= gr + 102 and lr <= gr + 116
 		else
-			inZone = lr >= gr + 102 and lr <= gr + 159
+			inZone = lr > gr + 116 and lr <= gr + 159
 		end
 
 		if not inZone then return end
 
-		local char = LocalPlayer.Character
-		if not char then return end
+		fired = true
 
-		local p = pendingCheck
-		p.event:FireServer("success", 1, p.genId, p.gen, p.session, char)
-		Check.Visible = false
-
-		-- The original script's tween will finish and fire "fail" +
-		-- set isRepairing=false. The server deduplicates by session
-		-- so the fail is a no-op, but isRepairing going false would
-		-- stop the repair on the client. Restore it once.
-		local ci = char:FindFirstChild("CheckInterractable")
-		if ci then
-			local guard
-			guard = ci:GetAttributeChangedSignal("isRepairing"):Connect(function()
-				if not ci:GetAttribute("isRepairing") then
-					task.defer(function()
-						pcall(function() ci:SetAttribute("isRepairing", true) end)
-					end)
-					if guard then guard:Disconnect(); guard = nil end
-				end
-			end)
-			task.delay(5, function()
-				if guard then guard:Disconnect(); guard = nil end
-			end)
+		local pressed = pressSkillCheck()
+		if not pressed then
+			local char = LocalPlayer.Character
+			if char then
+				local result = target == "great" and "success" or "neutral"
+				local pts = target == "great" and 1 or 0
+				resultEvent:FireServer(result, pts, genId, generator, sessionId, char)
+				task.delay(0.15, function()
+					pcall(function() Check.Visible = false end)
+				end)
+			end
 		end
 
-		pendingCheck = nil
 		renderConn:Disconnect()
 		renderConn = nil
 	end)
@@ -128,17 +147,21 @@ local function init(Hub, UI)
 		if not on and renderConn then
 			renderConn:Disconnect()
 			renderConn = nil
-			pendingCheck = nil
 		end
 	end)
 
 	local modes = {"great", "good"}
 	local modeIdx = 1
-	local modeKV = tab:KeyValue("mode", modes[modeIdx], function()
+	local modeUI = {}
+	modeUI.kv = tab:KeyValue("mode", modes[modeIdx], function()
 		modeIdx = (modeIdx % #modes) + 1
 		autoSC.mode = modes[modeIdx]
-		modeKV:Set(modes[modeIdx])
+		modeUI.kv:Set(modes[modeIdx])
 	end)
+
+	tab:Slider("rate", 0, 100, autoSC.rate, function(v)
+		autoSC.rate = v
+	end, { Step = 5, Suffix = "%" })
 
 	Hub:_track(genSCEvent.OnClientEvent:Connect(function(p1, p2, p3, p4, p5)
 		onSkillCheck(genSCResult, p1, p2, p3, p4)
