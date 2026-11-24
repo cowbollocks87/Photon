@@ -13,7 +13,7 @@ local function build(Hub, gameConfig)
 	home:Section("welcome")
 	local hour = tonumber(os.date("%H"))
 	local greeting = hour < 12 and "good morning" or hour < 18 and "good afternoon" or "good evening"
-	home:Label(greeting .. ", " .. LocalPlayer.DisplayName .. ". photon is active.")
+	home:Label(greeting .. ", " .. LocalPlayer.DisplayName .. ".")
 
 	-- session info
 	home:Section("session")
