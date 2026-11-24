@@ -8,7 +8,7 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 ---------------------------------------------------------------------------
--- Remote references
+-- Remote references — skill check
 ---------------------------------------------------------------------------
 local genRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Generator")
 local genSCEvent = genRemotes:WaitForChild("SkillCheckEvent")
@@ -22,6 +22,21 @@ pcall(function()
 end)
 
 ---------------------------------------------------------------------------
+-- Remote references — parry
+---------------------------------------------------------------------------
+local parryEvent, parryResult
+pcall(function()
+	local pd = ReplicatedStorage.Remotes.Items["Parrying Dagger"]
+	parryEvent = pd.parry
+	parryResult = pd.parryResult
+end)
+
+local slowEvent
+pcall(function()
+	slowEvent = ReplicatedStorage.Remotes.Mechanics.Slow
+end)
+
+---------------------------------------------------------------------------
 -- Skill check UI references
 ---------------------------------------------------------------------------
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -31,7 +46,7 @@ local Line = Check:WaitForChild("Line")
 local Goal = Check:WaitForChild("Goal")
 
 ---------------------------------------------------------------------------
--- Keybind + hook
+-- Keybind + hook (shared — action-aware tagging)
 ---------------------------------------------------------------------------
 local scKey = Enum.KeyCode.Space
 local kcHooked = false
@@ -49,7 +64,7 @@ pcall(function()
 
 		pcall(function()
 			origFn = hookfunction(KC.matches, function(action, input)
-				if action == "skillcheck" and type(input) == "table" and rawget(input, "_auto") then
+				if type(input) == "table" and rawget(input, "_auto") == action then
 					return true
 				end
 				return origFn(action, input)
@@ -59,7 +74,7 @@ pcall(function()
 
 		if not hooked then
 			KC.matches = function(action, input)
-				if action == "skillcheck" and type(input) == "table" and rawget(input, "_auto") then
+				if type(input) == "table" and rawget(input, "_auto") == action then
 					return true
 				end
 				return origFn(action, input)
@@ -79,20 +94,27 @@ local autoSC = {
 	rate = 100,
 }
 
+local autoParry = {
+	enabled = false,
+}
+
 local renderConn = nil
 
 ---------------------------------------------------------------------------
--- Input simulation
+-- Shared helpers
 ---------------------------------------------------------------------------
 local function bellRand()
 	return (math.random() + math.random() + math.random()) / 3
 end
 
+---------------------------------------------------------------------------
+-- Skill check input simulation
+---------------------------------------------------------------------------
 local fakeInput = {
 	KeyCode = scKey,
 	UserInputType = Enum.UserInputType.Keyboard,
 	UserInputState = Enum.UserInputState.Begin,
-	_auto = true,
+	_auto = "skillcheck",
 }
 
 local function tryKeypress()
@@ -102,19 +124,19 @@ local function tryKeypress()
 	end)
 end
 
-local function tryGetConnections()
+local function tryGetConnections(fake)
 	if not kcHooked then return false end
 	return pcall(function()
 		for _, conn in ipairs(getconnections(UserInputService.InputBegan)) do
-			conn:Fire(fakeInput, false)
+			conn:Fire(fake, false)
 		end
 	end)
 end
 
-local function tryFiresignal()
+local function tryFiresignal(fake)
 	if not kcHooked then return false end
 	return pcall(function()
-		firesignal(UserInputService.InputBegan, fakeInput, false)
+		firesignal(UserInputService.InputBegan, fake, false)
 	end)
 end
 
@@ -137,17 +159,8 @@ local function directFire(resultEvent, gen, genPoint, sessionId, target)
 end
 
 ---------------------------------------------------------------------------
--- Core
+-- Skill check core
 ---------------------------------------------------------------------------
--- Zone geometry (confirmed via Cobalt RSpy + decompile):
---   Great  goalRot+102 .. goalRot+116   (14° window)  → "success", 1
---   Good   goalRot+116 .. goalRot+159   (43° window)  → "neutral", 0
---   Fail   everywhere else                             → "fail", -10
---
--- Input chain: keypress → getconnections:Fire → firesignal → direct
--- remote fire.  Methods 1-3 trigger the original handleSkillCheck which
--- plays sound cues and visual feedback.  Method 4 is a silent fallback.
-
 local function startWatching(resultEvent, gen, genPoint, sessionId)
 	if renderConn then renderConn:Disconnect() end
 
@@ -185,8 +198,8 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 		fired = true
 
 		local inputSent = tryKeypress()
-			or tryGetConnections()
-			or tryFiresignal()
+			or tryGetConnections(fakeInput)
+			or tryFiresignal(fakeInput)
 
 		if inputSent then
 			local re, g, gp, sid, tgt = resultEvent, gen, genPoint, sessionId, target
@@ -211,11 +224,122 @@ local function onSkillCheck(resultEvent, p1, p2, p3, p4)
 end
 
 ---------------------------------------------------------------------------
+-- Auto parry — killer detection + animation watching
+---------------------------------------------------------------------------
+local M1_ANIMS = {
+	["rbxassetid://84926129581106"] = true,
+}
+
+local M1_RANGE = 16
+
+local fakeParryInput = {
+	KeyCode = Enum.KeyCode.Unknown,
+	UserInputType = Enum.UserInputType.MouseButton2,
+	UserInputState = Enum.UserInputState.Begin,
+	_auto = "item",
+}
+
+local function tryParryKeypress()
+	return pcall(function()
+		mouse2press()
+		task.defer(function() pcall(mouse2release) end)
+	end)
+end
+
+local function directParry()
+	local char = LocalPlayer.Character
+	if not char or not parryEvent then return end
+	parryEvent:FireServer(char)
+	pcall(function()
+		if slowEvent then slowEvent:Fire(0, 1, 0) end
+	end)
+end
+
+local function fireParry()
+	local sent = tryParryKeypress()
+		or tryGetConnections(fakeParryInput)
+		or tryFiresignal(fakeParryInput)
+	if not sent then
+		directParry()
+	end
+end
+
+local function inM1Range(killerChar)
+	local myRoot = LocalPlayer.Character
+		and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	local kRoot = killerChar
+		and killerChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot or not kRoot then return false end
+	return (myRoot.Position - kRoot.Position).Magnitude <= M1_RANGE
+end
+
+local parryConns = {}
+local watchingKiller = nil
+
+local function teardownParryWatcher()
+	for _, c in ipairs(parryConns) do
+		pcall(c.Disconnect, c)
+	end
+	table.clear(parryConns)
+	watchingKiller = nil
+end
+
+local function findKiller()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Team and p.Team.Name == "Killer" then
+			return p
+		end
+	end
+	return nil
+end
+
+local function setupParryWatcher()
+	teardownParryWatcher()
+	if not autoParry.enabled then return end
+
+	local killer = findKiller()
+	if not killer then return end
+	watchingKiller = killer
+
+	table.insert(parryConns, killer.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		if autoParry.enabled then setupParryWatcher() end
+	end))
+
+	local char = killer.Character
+	if not char then return end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if not animator then return end
+
+	table.insert(parryConns, animator.AnimationPlayed:Connect(function(track)
+		if not autoParry.enabled then return end
+
+		local id = track.Animation and track.Animation.AnimationId or ""
+		local isKnown = M1_ANIMS[id]
+		local isHeuristic = not isKnown
+			and track.Priority == Enum.AnimationPriority.Action
+			and track.Length >= 1 and track.Length <= 1.8
+			and track.Speed >= 0.9 and track.Speed <= 1.1
+
+		if not (isKnown or isHeuristic) then return end
+		if not inM1Range(char) then return end
+
+		fireParry()
+	end))
+end
+
+---------------------------------------------------------------------------
 -- UI
 ---------------------------------------------------------------------------
 local function init(Hub, UI)
 	local tab = Hub:Tab("automation")
 
+	----------------------------------------------------------------
+	-- Skill check section
+	----------------------------------------------------------------
 	tab:Section("skill check")
 	tab:Toggle("auto skill check", false, function(on)
 		autoSC.enabled = on
@@ -248,6 +372,32 @@ local function init(Hub, UI)
 			onSkillCheck(healSCResult, p1, p2, p3, p4)
 		end))
 	end
+
+	----------------------------------------------------------------
+	-- Parry section
+	----------------------------------------------------------------
+	tab:Section("parry")
+	tab:Toggle("auto parry", false, function(on)
+		autoParry.enabled = on
+		Hub:Log(on and "auto parry on" or "auto parry off")
+		if on then
+			setupParryWatcher()
+		else
+			teardownParryWatcher()
+		end
+	end)
+
+	local lastParryCheck = 0
+	Hub:_track(RunService.Heartbeat:Connect(function()
+		if not autoParry.enabled then return end
+		local now = os.clock()
+		if now - lastParryCheck < 2 then return end
+		lastParryCheck = now
+		local killer = findKiller()
+		if killer ~= watchingKiller then
+			setupParryWatcher()
+		end
+	end))
 end
 
 return { init = init }
