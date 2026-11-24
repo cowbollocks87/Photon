@@ -291,9 +291,20 @@ local function killerFacingMe(killerChar)
 	if not myRoot or not kRoot then return false end
 	local toMe = (myRoot.Position - kRoot.Position) * Vector3.new(1, 0, 1)
 	if toMe.Magnitude < 0.5 then return true end
+	local threshold = math.cos(math.rad(autoParry.faceCone))
+	local toMeDir = toMe.Unit
+
 	local look = kRoot.CFrame.LookVector * Vector3.new(1, 0, 1)
-	if look.Magnitude < 0.01 then return true end
-	return toMe.Unit:Dot(look.Unit) > math.cos(math.rad(autoParry.faceCone))
+	if look.Magnitude > 0.01 and toMeDir:Dot(look.Unit) > threshold then
+		return true
+	end
+
+	local vel = kRoot.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+	if vel.Magnitude > 2 and toMeDir:Dot(vel.Unit) > threshold then
+		return true
+	end
+
+	return false
 end
 
 ---------------------------------------------------------------------------
@@ -358,7 +369,7 @@ end
 local parryConns = {}
 local watchingKiller = nil
 local watchedAnimator = nil
-local PARRY_WATCH_WINDOW = 0.5
+local PARRY_WATCH_WINDOW = 0.65
 local parryWatchConn = nil
 
 local function teardownParryWatcher()
@@ -393,10 +404,10 @@ local function connectAnimator(animator, char)
 		local isKnown = M1_ANIMS[id]
 
 		if not isKnown then
-			if track.Length == 0 then task.wait(0.05) end
-			local isHeuristic = track.Priority == Enum.AnimationPriority.Action
-				and track.Length >= 0.8 and track.Length <= 2.0
-				and track.Speed >= 0.8 and track.Speed <= 1.2
+			local len = track.Length
+			local isHeuristic = track.Priority.Value >= Enum.AnimationPriority.Action.Value
+				and track.Speed >= 0.5 and track.Speed <= 2.0
+				and (len == 0 or (len >= 0.3 and len <= 2.5))
 			if not isHeuristic then return end
 		end
 
