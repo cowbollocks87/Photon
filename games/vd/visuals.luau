@@ -450,7 +450,7 @@ local function updateESP()
 			if head then
 				local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
 				if onScreen then
-					local label = model.Name
+					local label = model.Name .. " [BOT]"
 					if botTrack.showDistance then
 						local dist = (head.Position - refPos).Magnitude
 						label = label .. " [" .. math.floor(dist) .. "m]"
