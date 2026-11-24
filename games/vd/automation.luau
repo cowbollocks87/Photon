@@ -297,24 +297,34 @@ local function killerFacingMe(killerChar)
 end
 
 ---------------------------------------------------------------------------
--- Radius visualization
+-- Radius visualization — world-space ground circle
 ---------------------------------------------------------------------------
-local radiusCircle = nil
+local CIRCLE_SEGMENTS = 40
+local CIRCLE_COLOR = Color3.fromRGB(255, 150, 30)
+local circleLines = {}
 
-local function createRadiusCircle()
-	if radiusCircle then return end
-	radiusCircle = Drawing.new("Circle")
-	radiusCircle.Color = Color3.fromRGB(255, 150, 30)
-	radiusCircle.Thickness = 1.5
-	radiusCircle.Transparency = 0.6
-	radiusCircle.Filled = false
-	radiusCircle.Visible = false
+local function createCircleLines()
+	if #circleLines > 0 then return end
+	for i = 1, CIRCLE_SEGMENTS do
+		local line = Drawing.new("Line")
+		line.Color = CIRCLE_COLOR
+		line.Thickness = 1.5
+		line.Transparency = 0.6
+		line.Visible = false
+		circleLines[i] = line
+	end
 end
 
-local function destroyRadiusCircle()
-	if radiusCircle then
-		radiusCircle:Remove()
-		radiusCircle = nil
+local function destroyCircleLines()
+	for _, line in ipairs(circleLines) do
+		line:Remove()
+	end
+	table.clear(circleLines)
+end
+
+local function hideCircleLines()
+	for _, line in ipairs(circleLines) do
+		line.Visible = false
 	end
 end
 
@@ -322,33 +332,53 @@ local radiusRenderConn = nil
 
 local function startRadiusRender()
 	if radiusRenderConn then return end
-	createRadiusCircle()
+	createCircleLines()
 	radiusRenderConn = RunService.RenderStepped:Connect(function()
 		if not autoParry.showRadius or not autoParry.enabled then
-			if radiusCircle then radiusCircle.Visible = false end
+			hideCircleLines()
 			return
 		end
 		local myRoot = getMyRoot()
 		if not myRoot then
-			radiusCircle.Visible = false
+			hideCircleLines()
 			return
 		end
 		local cam = workspace.CurrentCamera
-		local pos, onScreen = cam:WorldToViewportPoint(myRoot.Position)
-		if not onScreen then
-			radiusCircle.Visible = false
-			return
+		local center = myRoot.Position
+		local r = autoParry.radius
+		local step = (2 * math.pi) / CIRCLE_SEGMENTS
+		local prevScreen = nil
+		local prevOn = false
+
+		for i = 1, CIRCLE_SEGMENTS do
+			local angle = step * i
+			local worldPt = center + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
+			local sp, onScreen = cam:WorldToViewportPoint(worldPt)
+			local curScreen = Vector2.new(sp.X, sp.Y)
+
+			if i == 1 then
+				prevScreen = curScreen
+				prevOn = onScreen
+
+				local a0 = step * CIRCLE_SEGMENTS
+				local wp0 = center + Vector3.new(math.cos(a0) * r, 0, math.sin(a0) * r)
+				local sp0, on0 = cam:WorldToViewportPoint(wp0)
+				prevScreen = Vector2.new(sp0.X, sp0.Y)
+				prevOn = on0
+			end
+
+			local line = circleLines[i]
+			if prevOn or onScreen then
+				line.From = prevScreen
+				line.To = curScreen
+				line.Visible = true
+			else
+				line.Visible = false
+			end
+
+			prevScreen = curScreen
+			prevOn = onScreen
 		end
-		local edge = cam:WorldToViewportPoint(
-			myRoot.Position + cam.CFrame.RightVector * autoParry.radius
-		)
-		local screenRadius = (
-			Vector2.new(edge.X, edge.Y) - Vector2.new(pos.X, pos.Y)
-		).Magnitude
-		radiusCircle.Position = Vector2.new(pos.X, pos.Y)
-		radiusCircle.Radius = math.max(screenRadius, 4)
-		radiusCircle.NumSides = math.clamp(math.floor(screenRadius * 0.8), 24, 64)
-		radiusCircle.Visible = true
 	end)
 end
 
@@ -357,7 +387,7 @@ local function stopRadiusRender()
 		radiusRenderConn:Disconnect()
 		radiusRenderConn = nil
 	end
-	if radiusCircle then radiusCircle.Visible = false end
+	hideCircleLines()
 end
 
 ---------------------------------------------------------------------------
