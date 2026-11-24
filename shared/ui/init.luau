@@ -329,7 +329,7 @@ function UI:Tab(name)
 	Pad(page, 8, 14, 12, 12)
 	List(page, 2)
 
-	local tab = setmetatable({Hub = self, Name = name, Button = btn, Page = page, Caret = caret, Label = label, Order = 0}, Tab)
+	local tab = setmetatable({Hub = self, Name = name, _btn = btn, Page = page, Caret = caret, _label = label, Order = 0}, Tab)
 	btn.MouseEnter:Connect(function() if self.Active ~= tab then label.TextColor3 = T.text end end)
 	btn.MouseLeave:Connect(function() if self.Active ~= tab then label.TextColor3 = T.mid end end)
 	btn.MouseButton1Click:Connect(function() self:SelectTab(tab) end)
@@ -344,9 +344,9 @@ function UI:SelectTab(tab)
 		local on = t == tab
 		t.Page.Visible = on
 		t.Caret.Visible = on
-		t.Label.TextColor3 = on and T.white or T.mid
-		t.Label.FontFace = on and FONT_M or FONT
-		t.Button.BackgroundTransparency = on and 0 or 1
+		t._label.TextColor3 = on and T.white or T.mid
+		t._label.FontFace = on and FONT_M or FONT
+		t._btn.BackgroundTransparency = on and 0 or 1
 	end
 	self.Active = tab
 	self:_setPath(tab.Name)
