@@ -1457,28 +1457,6 @@ local function init(Hub, UI)
 		end)
 	end, nil, "playerESP")
 
-	local selfHandle = track("self esp", selfTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
-			selfTrack.color = c
-			refreshSelfHighlight()
-		end)
-
-		sub:Choice("depth mode", DEPTH_MODES, selfTrack.depthMode, function(v)
-			selfTrack.depthMode = v
-			refreshSelfHighlight()
-		end)
-
-		sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
-			selfTrack.fillTransparency = 1 - v
-			refreshSelfHighlight()
-		end, { Step = 0.1 })
-
-		sub:Slider("outline opacity", 0, 1, 1 - selfTrack.outlineTransparency, function(v)
-			selfTrack.outlineTransparency = 1 - v
-			refreshSelfHighlight()
-		end, { Step = 0.1 })
-	end)
-
 	local botHandle = track("bot esp", botTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
 			botTrack.color = c
@@ -1509,33 +1487,85 @@ local function init(Hub, UI)
 		end)
 	end)
 
-	local trapHandle = track("bear trap esp", trapTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
-			trapTrack.color = c
-			refreshTrapHighlights()
+	local selfHandle = track("self esp", selfTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
+			selfTrack.color = c
+			refreshSelfHighlight()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, trapTrack.depthMode, function(v)
-			trapTrack.depthMode = v
-			refreshTrapHighlights()
+		sub:Choice("depth mode", DEPTH_MODES, selfTrack.depthMode, function(v)
+			selfTrack.depthMode = v
+			refreshSelfHighlight()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - trapTrack.fillTransparency, function(v)
-			trapTrack.fillTransparency = 1 - v
-			refreshTrapHighlights()
+		sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
+			selfTrack.fillTransparency = 1 - v
+			refreshSelfHighlight()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - trapTrack.outlineTransparency, function(v)
-			trapTrack.outlineTransparency = 1 - v
-			refreshTrapHighlights()
+		sub:Slider("outline opacity", 0, 1, 1 - selfTrack.outlineTransparency, function(v)
+			selfTrack.outlineTransparency = 1 - v
+			refreshSelfHighlight()
 		end, { Step = 0.1 })
+	end)
 
-		sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
-			trapTrack.textOverlay = on
+	local palletHandle = track("pallet esp", palletTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
+			palletTrack.color = c
+			refreshPalletHighlights()
 		end)
 
-		sub:Toggle("show distance", trapTrack.showDistance, function(on)
-			trapTrack.showDistance = on
+		sub:Choice("depth mode", DEPTH_MODES, palletTrack.depthMode, function(v)
+			palletTrack.depthMode = v
+			refreshPalletHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - palletTrack.fillTransparency, function(v)
+			palletTrack.fillTransparency = 1 - v
+			refreshPalletHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - palletTrack.outlineTransparency, function(v)
+			palletTrack.outlineTransparency = 1 - v
+			refreshPalletHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", palletTrack.textOverlay, function(on)
+			palletTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", palletTrack.showDistance, function(on)
+			palletTrack.showDistance = on
+		end)
+	end)
+
+	local windowHandle = track("window esp", windowTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, windowTrack.color, function(c)
+			windowTrack.color = c
+			refreshWindowHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, windowTrack.depthMode, function(v)
+			windowTrack.depthMode = v
+			refreshWindowHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - windowTrack.fillTransparency, function(v)
+			windowTrack.fillTransparency = 1 - v
+			refreshWindowHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - windowTrack.outlineTransparency, function(v)
+			windowTrack.outlineTransparency = 1 - v
+			refreshWindowHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", windowTrack.textOverlay, function(on)
+			windowTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", windowTrack.showDistance, function(on)
+			windowTrack.showDistance = on
 		end)
 	end)
 
@@ -1577,63 +1607,33 @@ local function init(Hub, UI)
 		end)
 	end)
 
-	local windowHandle = track("window esp", windowTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, windowTrack.color, function(c)
-			windowTrack.color = c
-			refreshWindowHighlights()
+	local trapHandle = track("bear trap esp", trapTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
+			trapTrack.color = c
+			refreshTrapHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, windowTrack.depthMode, function(v)
-			windowTrack.depthMode = v
-			refreshWindowHighlights()
+		sub:Choice("depth mode", DEPTH_MODES, trapTrack.depthMode, function(v)
+			trapTrack.depthMode = v
+			refreshTrapHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - windowTrack.fillTransparency, function(v)
-			windowTrack.fillTransparency = 1 - v
-			refreshWindowHighlights()
+		sub:Slider("fill opacity", 0, 1, 1 - trapTrack.fillTransparency, function(v)
+			trapTrack.fillTransparency = 1 - v
+			refreshTrapHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - windowTrack.outlineTransparency, function(v)
-			windowTrack.outlineTransparency = 1 - v
-			refreshWindowHighlights()
+		sub:Slider("outline opacity", 0, 1, 1 - trapTrack.outlineTransparency, function(v)
+			trapTrack.outlineTransparency = 1 - v
+			refreshTrapHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", windowTrack.textOverlay, function(on)
-			windowTrack.textOverlay = on
+		sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
+			trapTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show distance", windowTrack.showDistance, function(on)
-			windowTrack.showDistance = on
-		end)
-	end)
-
-	local palletHandle = track("pallet esp", palletTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
-			palletTrack.color = c
-			refreshPalletHighlights()
-		end)
-
-		sub:Choice("depth mode", DEPTH_MODES, palletTrack.depthMode, function(v)
-			palletTrack.depthMode = v
-			refreshPalletHighlights()
-		end)
-
-		sub:Slider("fill opacity", 0, 1, 1 - palletTrack.fillTransparency, function(v)
-			palletTrack.fillTransparency = 1 - v
-			refreshPalletHighlights()
-		end, { Step = 0.1 })
-
-		sub:Slider("outline opacity", 0, 1, 1 - palletTrack.outlineTransparency, function(v)
-			palletTrack.outlineTransparency = 1 - v
-			refreshPalletHighlights()
-		end, { Step = 0.1 })
-
-		sub:Toggle("text overlay", palletTrack.textOverlay, function(on)
-			palletTrack.textOverlay = on
-		end)
-
-		sub:Toggle("show distance", palletTrack.showDistance, function(on)
-			palletTrack.showDistance = on
+		sub:Toggle("show distance", trapTrack.showDistance, function(on)
+			trapTrack.showDistance = on
 		end)
 	end)
 
