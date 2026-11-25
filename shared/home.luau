@@ -95,8 +95,22 @@ local function build(Hub, gameConfig)
 		Hub:SetAccent(name)
 	end)
 
+	local toastPositions = Hub.ToastPositions or {"top-center"}
+	home:Choice("notification position", toastPositions, Hub._appearance.toastPos or "top-center", function(pos)
+		Hub:SetToastPosition(pos)
+	end)
+
+	home:Slider("notification x offset", -300, 300, Hub._appearance.toastOffsetX or 0, function(v)
+		Hub:SetToastOffset(v, nil)
+	end, { Step = 10, Suffix = " px" })
+
+	home:Slider("notification y offset", -300, 300, Hub._appearance.toastOffsetY or 0, function(v)
+		Hub:SetToastOffset(nil, v)
+	end, { Step = 10, Suffix = " px" })
+
 	Hub:RegisterConfig("appearance", Hub._appearance, function()
 		Hub:SetAccent(Hub._appearance.accent)
+		Hub:SetToastPosition(Hub._appearance.toastPos)
 	end)
 
 	-- quick actions

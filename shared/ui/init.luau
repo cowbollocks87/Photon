@@ -253,9 +253,14 @@ function UI.new(opts)
 	local info = Text(status, "-- fps", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 0), Size = U(140, STATUS_H),
 		TextSize = 10, TextColor3 = T.dim, TextXAlignment = RIGHT})
 
-	self.Toasts = Frame(gui, {Name = "Toasts", BackgroundTransparency = 1, Size = U(250, 400)})
-	self.ToastLayout = List(self.Toasts, 6)
-	self:SetToastPosition("bottom-right")
+	self.Toasts = Frame(gui, {Name = "Toasts", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 16),
+		Size = UDim2.new(0, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1})
+	self.ToastLayout = List(self.Toasts, 4)
+	self.ToastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	self._appearance.toastPos = self._appearance.toastPos or "top-center"
+	self._appearance.toastOffsetX = self._appearance.toastOffsetX or 0
+	self._appearance.toastOffsetY = self._appearance.toastOffsetY or 0
+	self:SetToastPosition(self._appearance.toastPos)
 
 	minBtn.MouseButton1Click:Connect(function()
 		self.Minimized = not self.Minimized
@@ -346,11 +351,33 @@ function UI:SetVisible(v)
 	self.Window.Visible = v
 end
 
+local TOAST_ANCHORS = {
+	["top-left"]      = { anchor = Vector2.new(0, 0), scale = Vector2.new(0, 0),     base = Vector2.new(16, 16),   hAlign = Enum.HorizontalAlignment.Left },
+	["top-center"]    = { anchor = Vector2.new(0.5, 0), scale = Vector2.new(0.5, 0), base = Vector2.new(0, 16),    hAlign = Enum.HorizontalAlignment.Center },
+	["top-right"]     = { anchor = Vector2.new(1, 0), scale = Vector2.new(1, 0),     base = Vector2.new(-16, 16),  hAlign = Enum.HorizontalAlignment.Right },
+	["bottom-left"]   = { anchor = Vector2.new(0, 1), scale = Vector2.new(0, 1),     base = Vector2.new(16, -16),  hAlign = Enum.HorizontalAlignment.Left },
+	["bottom-center"] = { anchor = Vector2.new(0.5, 1), scale = Vector2.new(0.5, 1), base = Vector2.new(0, -16),   hAlign = Enum.HorizontalAlignment.Center },
+	["bottom-right"]  = { anchor = Vector2.new(1, 1), scale = Vector2.new(1, 1),     base = Vector2.new(-16, -16), hAlign = Enum.HorizontalAlignment.Right },
+}
+UI.ToastPositions = {"top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"}
+
 function UI:SetToastPosition(where)
-	local top = where == "top-right"
-	self.Toasts.AnchorPoint = Vector2.new(1, top and 0 or 1)
-	self.Toasts.Position = top and UDim2.new(1, -16, 0, 16) or UDim2.new(1, -16, 1, -16)
+	local cfg = TOAST_ANCHORS[where]
+	if not cfg then return end
+	self._appearance.toastPos = where
+	local ox = self._appearance.toastOffsetX or 0
+	local oy = self._appearance.toastOffsetY or 0
+	self.Toasts.AnchorPoint = cfg.anchor
+	self.Toasts.Position = UDim2.new(cfg.scale.X, cfg.base.X + ox, cfg.scale.Y, cfg.base.Y + oy)
+	self.ToastLayout.HorizontalAlignment = cfg.hAlign
+	local top = where:find("top") ~= nil
 	self.ToastLayout.VerticalAlignment = top and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Bottom
+end
+
+function UI:SetToastOffset(ox, oy)
+	self._appearance.toastOffsetX = ox or self._appearance.toastOffsetX
+	self._appearance.toastOffsetY = oy or self._appearance.toastOffsetY
+	self:SetToastPosition(self._appearance.toastPos)
 end
 
 function UI:Tab(name)
@@ -450,19 +477,40 @@ function UI:Notify(title, body, duration)
 	if self.Destroyed or not self.NotificationsEnabled then return end
 	duration = duration or 3
 	self.ToastCount = self.ToastCount + 1
-	local toast = Frame(self.Toasts, {Name = "Toast", LayoutOrder = self.ToastCount, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AUTO_Y, BackgroundColor3 = T.bg})
-	Stroke(toast, T.line)
-	Pad(toast, 8, 10, 8, 14)
-	List(toast, 3)
-	Frame(toast, {Name = "Accent", Position = UDim2.new(0, -14, 0, -8), Size = UDim2.new(0, 2, 1, 16), BackgroundColor3 = T.white})
-	Text(toast, "> " .. escape(title), {LayoutOrder = 1, RichText = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AUTO_Y, FontFace = FONT_M, TextColor3 = T.white})
-	if body and body ~= "" then
-		Text(toast, escape(body), {LayoutOrder = 2, RichText = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AUTO_Y,
-			TextWrapped = true, TextSize = 11, TextColor3 = T.mid})
-	end
-	local track = Frame(toast, {LayoutOrder = 3, Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = T.line})
-	local fill = Frame(track, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.mid})
-	tween(fill, {Size = UDim2.fromScale(0, 1)}, TweenInfo.new(duration, Enum.EasingStyle.Linear))
+
+	local msg = body and body ~= "" and (title .. " — " .. body) or title
+
+	local toast = Frame(self.Toasts, {Name = "Toast", LayoutOrder = self.ToastCount,
+		Size = UDim2.new(0, 0, 0, 24), AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = T.bg, BackgroundTransparency = 1, ClipsDescendants = true})
+	local toastStroke = Stroke(toast, T.line)
+	toastStroke.Transparency = 0.6
+	Pad(toast, 0, 10, 0, 10)
+
+	local accent = Frame(toast, {Name = "Accent", Size = UDim2.new(0, 2, 1, 0), BackgroundColor3 = T.accent})
+
+	Text(toast, escape(msg), {Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X,
+		Position = U(8, 0), TextSize = 11, FontFace = FONT, TextColor3 = T.text, RichText = true})
+
+	local bar = Frame(toast, {Name = "Bar", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = T.accent, BackgroundTransparency = 0.5})
+	tween(bar, {Size = UDim2.new(0, 0, 0, 1)}, TweenInfo.new(duration, Enum.EasingStyle.Linear))
+
+	tween(toast, {BackgroundTransparency = 0.15}, TweenInfo.new(0.2, Enum.EasingStyle.Quart))
+
+	task.delay(duration - 0.3, function()
+		if not toast.Parent then return end
+		tween(toast, {BackgroundTransparency = 1}, TweenInfo.new(0.3, Enum.EasingStyle.Quart))
+		for _, child in ipairs(toast:GetDescendants()) do
+			if child:IsA("TextLabel") then
+				tween(child, {TextTransparency = 1}, TweenInfo.new(0.3))
+			elseif child:IsA("Frame") then
+				tween(child, {BackgroundTransparency = 1}, TweenInfo.new(0.3))
+			elseif child:IsA("UIStroke") then
+				tween(child, {Transparency = 1}, TweenInfo.new(0.3))
+			end
+		end
+	end)
 	task.delay(duration, function() if toast.Parent then toast:Destroy() end end)
 end
 
