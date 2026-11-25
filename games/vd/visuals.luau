@@ -633,9 +633,9 @@ local function init(Hub, UI)
 	tab:Toggle("master esp", false, function(on)
 		masterEnabled = on
 		Hub:Log(on and "esp enabled" or "esp disabled")
-	end)
+	end, "masterESP")
 
-	local function track(name, state, buildContent, onToggle)
+	local function track(name, state, buildContent, onToggle, bindId)
 		tab.Order = tab.Order + 1
 		local headerOrder = tab.Order
 		local row = H.Frame(tab.Page, {
@@ -649,7 +649,8 @@ local function init(Hub, UI)
 		hit.MouseLeave:Connect(function() H.tween(hit, {BackgroundTransparency = 1}) end)
 
 		local caret = H.Text(hit, "[+]", {Position = H.U(8, 0), Size = H.U(24, ROW_H), TextColor3 = T.dim})
-		H.Text(hit, name, {Position = H.U(36, 0), Size = UDim2.new(1, -120, 1, 0), TextColor3 = T.text})
+		local nameEnd = bindId and -172 or -120
+		H.Text(hit, name, {Position = H.U(36, 0), Size = UDim2.new(1, nameEnd, 1, 0), TextColor3 = T.text})
 
 		local toggleBox = H.Text(hit, "[ ]", {
 			AnchorPoint = Vector2.new(1, 0),
@@ -674,6 +675,48 @@ local function init(Hub, UI)
 			toggleVal.TextColor3 = state.enabled and T.white or T.dim
 		end
 		renderToggle()
+
+		if bindId then
+			local bindBox = H.Button(hit, "", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -74, 0.5, 0),
+				Size = H.U(46, 16),
+				TextSize = 10,
+				FontFace = UI.Fonts.Medium,
+				TextColor3 = T.mid,
+				BackgroundColor3 = T.raised,
+				BackgroundTransparency = 0,
+			})
+			H.Stroke(bindBox, T.line)
+			Hub._keybindRenders = Hub._keybindRenders or {}
+			local function renderBind()
+				if Hub._keybindListening == bindId then
+					bindBox.Text = "..."
+					bindBox.TextColor3 = T.accent
+				else
+					local k = Hub._keybinds[bindId]
+					bindBox.Text = k or "none"
+					bindBox.TextColor3 = k and T.text or T.dim
+				end
+			end
+			Hub._keybindRenders[bindId] = renderBind
+			renderBind()
+			bindBox.MouseButton1Click:Connect(function()
+				Hub:StartListening(bindId)
+			end)
+			bindBox.MouseButton2Click:Connect(function()
+				Hub:ClearKeybind(bindId)
+			end)
+			local toggleHandle = {
+				Set = function(_, v)
+					state.enabled = v == true
+					renderToggle()
+					if onToggle then pcall(onToggle, state.enabled) end
+				end,
+				Get = function() return state.enabled end,
+			}
+			Hub:RegisterKeybind(bindId, toggleHandle)
+		end
 
 		tab.Order = tab.Order + 1
 		local content = H.Frame(tab.Page, {
@@ -930,7 +973,13 @@ local function init(Hub, UI)
 
 		hit.MouseButton1Click:Connect(function()
 			local mouseX = game:GetService("UserInputService"):GetMouseLocation().X
-			local toggleRegionStart = row.AbsolutePosition.X + row.AbsoluteSize.X - 80
+			local rowRight = row.AbsolutePosition.X + row.AbsoluteSize.X
+			if bindId then
+				local bindStart = rowRight - 120
+				local bindEnd = rowRight - 74
+				if mouseX >= bindStart and mouseX <= bindEnd then return end
+			end
+			local toggleRegionStart = rowRight - 80
 			if mouseX >= toggleRegionStart then
 				state.enabled = not state.enabled
 				renderToggle()
@@ -983,7 +1032,7 @@ local function init(Hub, UI)
 	end, function()
 		refreshPlayerHighlights()
 		refreshBotHighlights()
-	end)
+	end, "teamESP")
 
 	-- tracks
 	tab:Section("tracks")
@@ -1020,7 +1069,7 @@ local function init(Hub, UI)
 		sub:Toggle("ignore spectator", playerTrack.ignoreSpectator, function(on)
 			playerTrack.ignoreSpectator = on
 		end)
-	end)
+	end, nil, "playerESP")
 
 	track("self esp", selfTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)

@@ -9,7 +9,7 @@
 	  tab:Section("library")
 	  tab:Script(name, description, callback)
 	  tab:Button(label, callback)
-	  tab:Toggle(label, default, callback(bool))
+	  tab:Toggle(label, default, callback(bool), bindId?)
 	  tab:Slider(label, min, max, default, callback(n), {Step=1, Suffix=""})
 	  tab:Choice(label, {"a","b"}, default, callback(str))
 	  tab:Input(label, placeholder, callback(text), {Live=false, Default=""})
@@ -181,6 +181,10 @@ function UI.new(opts)
 	self.Tabs, self.Connections, self.Consoles, self.History = {}, {}, {}, {}
 	self._configRegistry, self._cleanups = {}, {}
 	self._appearance = { accent = "white" }
+	self._keybinds = {}
+	self._keybindToggles = {}
+	self._keybindRenders = {}
+	self._keybindListening = nil
 	self.NotificationsEnabled = true
 	self.Minimized = false
 	self.LineCount, self.ToastCount = 0, 0
@@ -273,7 +277,29 @@ function UI.new(opts)
 	end)
 
 	self:_track(UserInputService.InputBegan:Connect(function(input, processed)
-		if not processed and input.KeyCode == self.Keybind then self:SetVisible(not win.Visible) end
+		if self._keybindListening then
+			if input.KeyCode == Enum.KeyCode.Unknown then return end
+			local id = self._keybindListening
+			if input.KeyCode == Enum.KeyCode.Escape then
+				self._keybindListening = nil
+				local renderFn = self._keybindRenders[id]
+				if renderFn then renderFn() end
+				return
+			end
+			if input.KeyCode == self.Keybind then return end
+			self._keybindListening = nil
+			self:SetKeybind(id, input.KeyCode)
+			return
+		end
+		if processed then return end
+		if input.KeyCode == self.Keybind then self:SetVisible(not win.Visible); return end
+		local kn = input.KeyCode.Name
+		for bindId, boundKey in pairs(self._keybinds) do
+			if boundKey == kn then
+				local toggle = self._keybindToggles[bindId]
+				if toggle then toggle:Set(not toggle.Get()) end
+			end
+		end
 	end))
 
 	local dragging, dragStart, startPos = false, nil, nil
@@ -378,6 +404,37 @@ function UI:SetToastOffset(ox, oy)
 	self._appearance.toastOffsetX = ox or self._appearance.toastOffsetX
 	self._appearance.toastOffsetY = oy or self._appearance.toastOffsetY
 	self:SetToastPosition(self._appearance.toastPos)
+end
+
+function UI:RegisterKeybind(id, toggle)
+	self._keybindToggles[id] = toggle
+end
+
+function UI:SetKeybind(id, keyCode)
+	self._keybinds[id] = keyCode and keyCode.Name or nil
+	local renderFn = self._keybindRenders and self._keybindRenders[id]
+	if renderFn then renderFn() end
+end
+
+function UI:ClearKeybind(id)
+	self._keybinds[id] = nil
+	local renderFn = self._keybindRenders and self._keybindRenders[id]
+	if renderFn then renderFn() end
+end
+
+function UI:ClearAllKeybinds()
+	for id in pairs(self._keybinds) do
+		self._keybinds[id] = nil
+	end
+	if self._keybindRenders then
+		for _, renderFn in pairs(self._keybindRenders) do renderFn() end
+	end
+end
+
+function UI:StartListening(id)
+	self._keybindListening = id
+	local renderFn = self._keybindRenders and self._keybindRenders[id]
+	if renderFn then renderFn() end
 end
 
 function UI:Tab(name)
@@ -549,11 +606,30 @@ function UI:GetConfigSnapshot()
 		end
 		snap[key] = copy
 	end
+	snap["_keybinds"] = {}
+	for id, keyName in pairs(self._keybinds) do
+		snap["_keybinds"][id] = keyName
+	end
 	return snap
 end
 
 function UI:ApplyConfig(snap)
+	if snap["_keybinds"] then
+		for id in pairs(self._keybinds) do
+			self._keybinds[id] = nil
+		end
+		for id, kn in pairs(snap["_keybinds"]) do
+			local ok, kc = pcall(function() return Enum.KeyCode[kn] end)
+			if ok and kc then
+				self._keybinds[id] = kn
+			end
+		end
+		if self._keybindRenders then
+			for _, renderFn in pairs(self._keybindRenders) do renderFn() end
+		end
+	end
 	for key, saved in pairs(snap) do
+		if key == "_keybinds" then continue end
 		local entry = self._configRegistry[key]
 		if entry then
 			for k, v in pairs(saved) do
@@ -654,12 +730,12 @@ function Tab:KeyValue(key, value, callback)
 		local v = Text(hit, tostring(value), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = UDim2.new(0.5, -8, 1, 0),
 			TextSize = 11, TextColor3 = T.text, TextXAlignment = RIGHT})
 		hit.MouseButton1Click:Connect(function() self:_safe(key, callback) end)
-		return {Set = function(_, val) v.Text = tostring(val) end}
+		return {Set = function(_, val) v.Text = tostring(val) end, Remove = function() row:Destroy() end}
 	end
 	Text(row, key, {Position = U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
 	local v = Text(row, tostring(value), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = UDim2.new(0.5, -8, 1, 0),
 		TextSize = 11, TextColor3 = T.text, TextXAlignment = RIGHT})
-	return {Set = function(_, val) v.Text = tostring(val) end}
+	return {Set = function(_, val) v.Text = tostring(val) end, Remove = function() row:Destroy() end}
 end
 
 function Tab:Button(label, callback)
@@ -681,11 +757,13 @@ function Tab:Script(name, description, callback)
 	return row
 end
 
-function Tab:Toggle(label, default, callback)
+function Tab:Toggle(label, default, callback, bindId)
+	local Hub = self.Hub
 	local state = default == true
 	local hit = self:_hit(self:_row())
 	local box = Text(hit, "", {Position = U(8, 0), Size = U(28, ROW_H), TextColor3 = T.white})
-	Text(hit, label, {Position = U(40, 0), Size = UDim2.new(1, -100, 1, 0)})
+	local labelEnd = bindId and -152 or -100
+	Text(hit, label, {Position = U(40, 0), Size = UDim2.new(1, labelEnd, 1, 0)})
 	local val = Text(hit, "", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = U(40, ROW_H), TextXAlignment = RIGHT, TextSize = 11})
 	local function render()
 		box.Text = state and "[x]" or "[ ]"
@@ -700,7 +778,48 @@ function Tab:Toggle(label, default, callback)
 	end
 	render()
 	onAccentChange(render)
-	hit.MouseButton1Click:Connect(function() set(not state) end)
+	local bindEaten = false
+	hit.MouseButton1Click:Connect(function()
+		if bindEaten then bindEaten = false; return end
+		set(not state)
+	end)
+
+	if bindId then
+		local bindBox = Button(hit, "", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -54, 0.5, 0),
+			Size = U(46, 16),
+			TextSize = 10,
+			FontFace = FONT_M,
+			TextColor3 = T.mid,
+			BackgroundColor3 = T.raised,
+			BackgroundTransparency = 0,
+		})
+		Stroke(bindBox, T.line)
+		Hub._keybindRenders = Hub._keybindRenders or {}
+		local function renderBind()
+			if Hub._keybindListening == bindId then
+				bindBox.Text = "..."
+				bindBox.TextColor3 = T.accent
+			else
+				local k = Hub._keybinds[bindId]
+				bindBox.Text = k or "none"
+				bindBox.TextColor3 = k and T.text or T.dim
+			end
+		end
+		Hub._keybindRenders[bindId] = renderBind
+		renderBind()
+		bindBox.MouseButton1Click:Connect(function()
+			bindEaten = true
+			Hub:StartListening(bindId)
+		end)
+		bindBox.MouseButton2Click:Connect(function()
+			bindEaten = true
+			Hub:ClearKeybind(bindId)
+		end)
+		Hub:RegisterKeybind(bindId, {Set = function(_, v) set(v == true) end, Get = function() return state end})
+	end
+
 	return {Set = function(_, v) set(v == true) end, Get = function() return state end}
 end
 

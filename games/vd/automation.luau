@@ -541,7 +541,7 @@ local function init(Hub, UI)
 			renderConn:Disconnect()
 			renderConn = nil
 		end
-	end)
+	end, "autoSC")
 
 	local modes = {"great", "good"}
 	local modeIdx = 1
@@ -580,7 +580,7 @@ local function init(Hub, UI)
 			teardownParryWatcher()
 			stopRadiusRender()
 		end
-	end)
+	end, "autoParry")
 
 	tab:Slider("radius", 8, 24, autoParry.radius, function(v)
 		autoParry.radius = v
@@ -601,7 +601,7 @@ local function init(Hub, UI)
 
 	tab:Toggle("facing check", true, function(on)
 		autoParry.faceCheck = on
-	end)
+	end, "faceCheck")
 
 	tab:Slider("facing cone", 30, 120, autoParry.faceCone, function(v)
 		autoParry.faceCone = v

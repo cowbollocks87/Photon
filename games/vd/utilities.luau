@@ -152,6 +152,45 @@ local function init(Hub, UI)
 	end)
 
 	----------------------------------------------------------------
+	-- Appearance
+	----------------------------------------------------------------
+	tab:Section("appearance")
+
+	local accentList = Hub.AccentList or {"white"}
+	tab:Choice("accent color", accentList, Hub._appearance.accent or "white", function(name)
+		Hub:SetAccent(name)
+	end)
+
+	local toastPositions = Hub.ToastPositions or {"top-center"}
+	tab:Choice("notification position", toastPositions, Hub._appearance.toastPos or "top-center", function(pos)
+		Hub:SetToastPosition(pos)
+	end)
+
+	tab:Slider("notification x offset", -300, 300, Hub._appearance.toastOffsetX or 0, function(v)
+		Hub:SetToastOffset(v, nil)
+	end, { Step = 10, Suffix = " px" })
+
+	tab:Slider("notification y offset", -300, 300, Hub._appearance.toastOffsetY or 0, function(v)
+		Hub:SetToastOffset(nil, v)
+	end, { Step = 10, Suffix = " px" })
+
+	Hub:RegisterConfig("appearance", Hub._appearance, function()
+		Hub:SetAccent(Hub._appearance.accent)
+		Hub:SetToastPosition(Hub._appearance.toastPos)
+	end)
+
+	----------------------------------------------------------------
+	-- Keybinds
+	----------------------------------------------------------------
+	tab:Section("keybinds")
+
+	tab:Button("clear all keybinds", function()
+		Hub:ClearAllKeybinds()
+		Hub:Log("all keybinds cleared")
+		Hub:Notify("keybinds", "all cleared", 2)
+	end)
+
+	----------------------------------------------------------------
 	-- System
 	----------------------------------------------------------------
 	tab:Section("system")
