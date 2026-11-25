@@ -50,16 +50,29 @@ local T = {
 }
 local HEX = {dim = "#606060", faint = "#3A3A3A", text = "#E2E2E2"}
 
-local ACCENTS = {
-	white      = {color = grey(255),                        hex = "#FFFFFF"},
+local COLORS = {
+	white      = {color = grey(255),                          hex = "#FFFFFF"},
+	red        = {color = Color3.fromRGB(255, 50, 50),       hex = "#FF3232"},
+	blue       = {color = Color3.fromRGB(50, 120, 255),      hex = "#3278FF"},
+	green      = {color = Color3.fromRGB(50, 255, 100),      hex = "#32FF64"},
+	yellow     = {color = Color3.fromRGB(255, 255, 50),      hex = "#FFFF32"},
+	purple     = {color = Color3.fromRGB(180, 50, 255),      hex = "#B432FF"},
+	cyan       = {color = Color3.fromRGB(50, 255, 255),      hex = "#32FFFF"},
+	orange     = {color = Color3.fromRGB(255, 150, 30),      hex = "#FF961E"},
+	hotpink    = {color = Color3.fromRGB(255, 50, 150),      hex = "#FF3296"},
+	rose       = {color = Color3.fromRGB(255, 110, 130),     hex = "#FF6E82"},
+	buttermilk = {color = Color3.fromRGB(255, 240, 180),     hex = "#FFF0B4"},
 	["baby blue"]  = {color = Color3.fromRGB(137, 207, 240), hex = "#89CFF0"},
-	turquoise  = {color = Color3.fromRGB(72, 209, 204),    hex = "#48D1CC"},
+	turquoise  = {color = Color3.fromRGB(72, 209, 204),      hex = "#48D1CC"},
 	["sage green"] = {color = Color3.fromRGB(152, 190, 140), hex = "#98BE8C"},
-	maroon     = {color = Color3.fromRGB(178, 70, 70),     hex = "#B24646"},
+	maroon     = {color = Color3.fromRGB(178, 70, 70),       hex = "#B24646"},
 }
-local ACCENT_LIST = {"white", "baby blue", "turquoise", "sage green", "maroon"}
-T.accent = ACCENTS.white.color
-HEX.accent = ACCENTS.white.hex
+local COLOR_LIST = {
+	"white", "red", "blue", "green", "yellow", "purple", "cyan", "orange",
+	"hotpink", "rose", "buttermilk", "baby blue", "turquoise", "sage green", "maroon",
+}
+T.accent = COLORS.white.color
+HEX.accent = COLORS.white.hex
 
 local accentCallbacks = {}
 local function onAccentChange(fn) table.insert(accentCallbacks, fn) end
@@ -478,7 +491,7 @@ function UI:SelectTab(tab)
 end
 
 function UI:SetAccent(name)
-	local preset = ACCENTS[name]
+	local preset = COLORS[name]
 	if not preset then return end
 	self._appearance.accent = name
 	T.accent = preset.color
@@ -961,5 +974,7 @@ function Tab:Console(height)
 	return box
 end
 
-UI.AccentList = ACCENT_LIST
+UI.AccentList = COLOR_LIST
+UI.Colors = COLORS
+UI.ColorList = COLOR_LIST
 return UI

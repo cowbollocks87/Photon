@@ -5,20 +5,8 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-local COLORS = {
-	white     = Color3.new(1, 1, 1),
-	red       = Color3.fromRGB(255, 50, 50),
-	blue      = Color3.fromRGB(50, 120, 255),
-	green     = Color3.fromRGB(50, 255, 100),
-	yellow    = Color3.fromRGB(255, 255, 50),
-	purple    = Color3.fromRGB(180, 50, 255),
-	cyan      = Color3.fromRGB(50, 255, 255),
-	orange    = Color3.fromRGB(255, 150, 30),
-	hotpink   = Color3.fromRGB(255, 50, 150),
-	rose      = Color3.fromRGB(255, 110, 130),
-	buttermilk = Color3.fromRGB(255, 240, 180),
-}
-local COLOR_NAMES = {"white", "red", "blue", "green", "yellow", "purple", "cyan", "orange", "hotpink", "rose", "buttermilk"}
+local COLORS = {}
+local COLOR_NAMES = {}
 
 ---------------------------------------------------------------------------
 -- State
@@ -626,6 +614,13 @@ local function init(Hub, UI)
 	local H = UI.Helpers
 	local C = UI.Constants
 	local ROW_H = C.ROW_H
+
+	for name, entry in pairs(UI.Colors) do
+		COLORS[name] = entry.color
+	end
+	for _, name in ipairs(UI.ColorList) do
+		table.insert(COLOR_NAMES, name)
+	end
 
 	local tab = Hub:Tab("visuals")
 
