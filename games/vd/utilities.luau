@@ -1,6 +1,9 @@
 --[[ Photon VD — Utilities Tab ]]--
 
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 local CONFIG_DIR = "Photon/vd"
 
@@ -188,6 +191,44 @@ local function init(Hub, UI)
 		Hub:ClearAllKeybinds()
 		Hub:Log("all keybinds cleared")
 		Hub:Notify("keybinds", "all cleared", 2)
+	end)
+
+	----------------------------------------------------------------
+	-- Camera
+	----------------------------------------------------------------
+	tab:Section("camera")
+
+	tab:Button("camera fix", function()
+		Hub:SetVisible(false)
+
+		local team = LocalPlayer.Team
+		local role = team and team.Name or ""
+		local cam = workspace.CurrentCamera
+
+		if role == "Killer" then
+			UserInputService.MouseIconEnabled = false
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			if cam then
+				cam.CameraType = Enum.CameraType.Custom
+				local char = LocalPlayer.Character
+				local head = char and char:FindFirstChild("Head")
+				if head then
+					cam.CFrame = CFrame.new(head.Position, head.Position + head.CFrame.LookVector)
+					cam.FieldOfView = 70
+				end
+			end
+			Hub:Notify("camera", "fixed — killer (first person)", 2)
+		elseif role == "Survivor" then
+			UserInputService.MouseIconEnabled = false
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			if cam then cam.CameraType = Enum.CameraType.Custom end
+			Hub:Notify("camera", "fixed — survivor", 2)
+		else
+			UserInputService.MouseIconEnabled = true
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			if cam then cam.CameraType = Enum.CameraType.Custom end
+			Hub:Notify("camera", "fixed — spectator (free)", 2)
+		end
 	end)
 
 	----------------------------------------------------------------
