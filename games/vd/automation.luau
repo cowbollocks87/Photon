@@ -534,7 +534,7 @@ local function init(Hub, UI)
 	-- Skill check section
 	----------------------------------------------------------------
 	tab:Section("skill check")
-	tab:Toggle("auto skill check", false, function(on)
+	local scToggle = tab:Toggle("auto skill check", false, function(on)
 		autoSC.enabled = on
 		Hub:Log(on and "auto skill check on" or "auto skill check off")
 		if not on and renderConn then
@@ -570,7 +570,7 @@ local function init(Hub, UI)
 	-- Parry section
 	----------------------------------------------------------------
 	tab:Section("parry")
-	tab:Toggle("auto parry", false, function(on)
+	local parryToggle = tab:Toggle("auto parry", false, function(on)
 		autoParry.enabled = on
 		Hub:Log(on and "auto parry on" or "auto parry off")
 		if on then
@@ -590,7 +590,7 @@ local function init(Hub, UI)
 		autoParry.delay = v
 	end, { Step = 10, Suffix = " ms" })
 
-	tab:Toggle("show radius", false, function(on)
+	local radiusToggle = tab:Toggle("show radius", false, function(on)
 		autoParry.showRadius = on
 		if on and autoParry.enabled then
 			startRadiusRender()
@@ -599,7 +599,7 @@ local function init(Hub, UI)
 		end
 	end)
 
-	tab:Toggle("facing check", true, function(on)
+	local faceToggle = tab:Toggle("facing check", true, function(on)
 		autoParry.faceCheck = on
 	end, "faceCheck")
 
@@ -609,15 +609,15 @@ local function init(Hub, UI)
 
 	tab:Section("ignore list")
 
-	tab:Toggle("ignore hidden mark", false, function(on)
+	local hmToggle = tab:Toggle("ignore hidden mark", false, function(on)
 		autoParry.ignoreHiddenMark = on
 	end)
 
-	tab:Toggle("ignore dark severance", false, function(on)
+	local dsToggle = tab:Toggle("ignore dark severance", false, function(on)
 		autoParry.ignoreDarkSeverance = on
 	end)
 
-	tab:Toggle("ignore frenzy", false, function(on)
+	local frenzyToggle = tab:Toggle("ignore frenzy", false, function(on)
 		autoParry.ignoreFrenzy = on
 	end)
 
@@ -646,6 +646,15 @@ local function init(Hub, UI)
 
 	Hub:RegisterConfig("autoSC", autoSC)
 	Hub:RegisterConfig("autoParry", autoParry)
+	Hub:OnConfigLoad(function()
+		scToggle:Set(autoSC.enabled)
+		parryToggle:Set(autoParry.enabled)
+		radiusToggle:Set(autoParry.showRadius)
+		faceToggle:Set(autoParry.faceCheck)
+		hmToggle:Set(autoParry.ignoreHiddenMark)
+		dsToggle:Set(autoParry.ignoreDarkSeverance)
+		frenzyToggle:Set(autoParry.ignoreFrenzy)
+	end)
 	Hub:RegisterCleanup(function()
 		teardownParryWatcher()
 		stopRadiusRender()

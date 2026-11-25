@@ -192,7 +192,7 @@ function UI.new(opts)
 	self.Keybind = opts.Keybind or Enum.KeyCode.RightShift
 	self.User = string.lower(LocalPlayer.Name)
 	self.Tabs, self.Connections, self.Consoles, self.History = {}, {}, {}, {}
-	self._configRegistry, self._cleanups = {}, {}
+	self._configRegistry, self._cleanups, self._configSyncs = {}, {}, {}
 	self._appearance = { accent = "white" }
 	self._keybinds = {}
 	self._keybindToggles = {}
@@ -588,6 +588,10 @@ function UI:RegisterConfig(key, state, refresh)
 	self._configRegistry[key] = { state = state, refresh = refresh }
 end
 
+function UI:OnConfigLoad(fn)
+	table.insert(self._configSyncs, fn)
+end
+
 function UI:RegisterCleanup(fn)
 	table.insert(self._cleanups, fn)
 end
@@ -663,6 +667,7 @@ function UI:ApplyConfig(snap)
 			if entry.refresh then pcall(entry.refresh) end
 		end
 	end
+	for _, fn in ipairs(self._configSyncs) do pcall(fn) end
 end
 
 function UI:Unload()

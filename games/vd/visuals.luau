@@ -11,6 +11,7 @@ local COLOR_NAMES = {}
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
+local masterESP = { enabled = false }
 local masterEnabled = false
 
 local DEPTH_MODES = { "alwaysontop", "occluded" }
@@ -746,8 +747,9 @@ local function init(Hub, UI)
 	local tab = Hub:Tab("visuals")
 
 	tab:Section("esp")
-	tab:Toggle("master esp", false, function(on)
+	local masterToggle = tab:Toggle("master esp", false, function(on)
 		masterEnabled = on
+		masterESP.enabled = on
 		Hub:Log(on and "esp enabled" or "esp disabled")
 	end, "masterESP")
 
@@ -1106,11 +1108,11 @@ local function init(Hub, UI)
 		end)
 
 		buildContent(sub)
-		return state
+		return { state = state, sync = renderToggle }
 	end
 
 	-- team ESP
-	track("team esp", teamESP, function(sub)
+	local teamHandle = track("team esp", teamESP, function(sub)
 		sub:Choice("spectator", COLOR_NAMES, teamESP.colors.Spectator, function(c)
 			teamESP.colors.Spectator = c
 			refreshPlayerHighlights()
@@ -1153,7 +1155,7 @@ local function init(Hub, UI)
 	-- tracks
 	tab:Section("tracks")
 
-	track("player esp", playerTrack, function(sub)
+	local playerHandle = track("player esp", playerTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, playerTrack.color, function(c)
 			playerTrack.color = c
 			refreshPlayerHighlights()
@@ -1187,7 +1189,7 @@ local function init(Hub, UI)
 		end)
 	end, nil, "playerESP")
 
-	track("self esp", selfTrack, function(sub)
+	local selfHandle = track("self esp", selfTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
 			selfTrack.color = c
 			refreshSelfHighlight()
@@ -1209,7 +1211,7 @@ local function init(Hub, UI)
 		end, { Step = 0.1 })
 	end)
 
-	track("bot esp", botTrack, function(sub)
+	local botHandle = track("bot esp", botTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
 			botTrack.color = c
 			refreshBotHighlights()
@@ -1239,7 +1241,7 @@ local function init(Hub, UI)
 		end)
 	end)
 
-	track("bear trap esp", trapTrack, function(sub)
+	local trapHandle = track("bear trap esp", trapTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
 			trapTrack.color = c
 			refreshTrapHighlights()
@@ -1269,7 +1271,7 @@ local function init(Hub, UI)
 		end)
 	end)
 
-	track("scp 049-2 esp", zombieTrack, function(sub)
+	local zombieHandle = track("scp 049-2 esp", zombieTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, zombieTrack.color, function(c)
 			zombieTrack.color = c
 			refreshZombieHighlights()
@@ -1348,12 +1350,23 @@ local function init(Hub, UI)
 		refreshZombieHighlights()
 	end
 
+	Hub:RegisterConfig("masterESP", masterESP)
 	Hub:RegisterConfig("playerTrack", playerTrack, refreshAll)
 	Hub:RegisterConfig("selfTrack", selfTrack, refreshAll)
 	Hub:RegisterConfig("teamESP", teamESP, refreshAll)
 	Hub:RegisterConfig("botTrack", botTrack, refreshAll)
 	Hub:RegisterConfig("trapTrack", trapTrack, refreshAll)
 	Hub:RegisterConfig("zombieTrack", zombieTrack, refreshAll)
+	Hub:OnConfigLoad(function()
+		masterEnabled = masterESP.enabled
+		masterToggle:Set(masterESP.enabled)
+		teamHandle.sync()
+		playerHandle.sync()
+		selfHandle.sync()
+		botHandle.sync()
+		trapHandle.sync()
+		zombieHandle.sync()
+	end)
 	Hub:RegisterCleanup(destroyAll)
 end
 
