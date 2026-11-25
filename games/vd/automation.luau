@@ -287,7 +287,7 @@ local fakeParryInput = {
 local function tryParryKeypress()
 	return pcall(function()
 		mouse2press()
-		task.defer(function() pcall(mouse2release) end)
+		pcall(mouse2release)
 	end)
 end
 
@@ -309,27 +309,32 @@ local function fireParry()
 	end
 end
 
-local function getMyRoot()
+local cachedMyRoot = nil
+local cachedKillerRoot = nil
+
+local function refreshMyRoot()
 	local char = LocalPlayer.Character
-	return char and char:FindFirstChild("HumanoidRootPart")
+	cachedMyRoot = char and char:FindFirstChild("HumanoidRootPart") or nil
 end
 
-local function getKillerRoot(killerChar)
-	return killerChar and killerChar:FindFirstChild("HumanoidRootPart")
+local function cacheKillerRoot(killerChar)
+	cachedKillerRoot = killerChar and killerChar:FindFirstChild("HumanoidRootPart") or nil
 end
 
-local function inParryRange(killerChar)
-	local myRoot = getMyRoot()
-	local kRoot = getKillerRoot(killerChar)
-	if not myRoot or not kRoot then return false end
+local function inParryRange()
+	local myRoot = cachedMyRoot
+	local kRoot = cachedKillerRoot
+	if not myRoot or not myRoot.Parent then refreshMyRoot(); myRoot = cachedMyRoot end
+	if not kRoot or not kRoot.Parent then return false end
 	return (myRoot.Position - kRoot.Position).Magnitude <= autoParry.radius
 end
 
-local function killerFacingMe(killerChar)
+local function killerFacingMe()
 	if not autoParry.faceCheck then return true end
-	local myRoot = getMyRoot()
-	local kRoot = getKillerRoot(killerChar)
-	if not myRoot or not kRoot then return false end
+	local myRoot = cachedMyRoot
+	local kRoot = cachedKillerRoot
+	if not myRoot or not myRoot.Parent then refreshMyRoot(); myRoot = cachedMyRoot end
+	if not myRoot or not kRoot or not kRoot.Parent then return false end
 	local toMe = (myRoot.Position - kRoot.Position) * Vector3.new(1, 0, 1)
 	if toMe.Magnitude < 0.5 then return true end
 	local threshold = math.cos(math.rad(autoParry.faceCone))
@@ -424,6 +429,7 @@ local function teardownParryWatcher()
 	end
 	watchingKiller = nil
 	watchedAnimator = nil
+	cachedKillerRoot = nil
 	frenzyActive = false
 end
 
@@ -438,6 +444,8 @@ end
 
 local function connectAnimator(animator, char)
 	watchedAnimator = animator
+	cacheKillerRoot(char)
+	refreshMyRoot()
 
 	table.insert(parryConns, animator.AnimationPlayed:Connect(function(track)
 		if not autoParry.enabled then return end
@@ -466,7 +474,7 @@ local function connectAnimator(animator, char)
 		local function startWatch()
 			if not autoParry.enabled then return end
 
-			if inParryRange(char) and killerFacingMe(char) then
+			if inParryRange() and killerFacingMe() then
 				fireParry()
 				return
 			end
@@ -479,8 +487,8 @@ local function connectAnimator(animator, char)
 					parryWatchConn = nil
 					return
 				end
-				if not inParryRange(char) then return end
-				if not killerFacingMe(char) then return end
+				if not inParryRange() then return end
+				if not killerFacingMe() then return end
 				parryWatchConn:Disconnect()
 				parryWatchConn = nil
 				fireParry()
@@ -645,6 +653,12 @@ local function init(Hub, UI)
 		if anim ~= watchedAnimator then
 			setupParryWatcher()
 		end
+	end))
+
+	refreshMyRoot()
+	Hub:_track(LocalPlayer.CharacterAdded:Connect(function(char)
+		local root = char:WaitForChild("HumanoidRootPart", 5)
+		if root then cachedMyRoot = root end
 	end))
 
 	Hub:RegisterConfig("autoSC", autoSC)
