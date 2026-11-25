@@ -10,7 +10,7 @@ local function ensureDir(path)
 	end
 end
 
-local function listConfigs()
+local function scanConfigs()
 	if not listfiles or not isfolder or not isfolder(CONFIG_DIR) then return {} end
 	local names = {}
 	for _, path in ipairs(listfiles(CONFIG_DIR)) do
@@ -75,11 +75,15 @@ end
 local function init(Hub, UI)
 	local tab = Hub:Tab("utilities")
 
-	tab:Section("configs")
+	----------------------------------------------------------------
+	-- Save
+	----------------------------------------------------------------
+	tab:Section("save config")
 
+	local refreshDropdown
 	local configInput = tab:Input("config name", "my_config", nil)
 
-	tab:Button("save config", function()
+	tab:Button("save", function()
 		local name = configInput.Get()
 		if not name or name == "" then
 			Hub:Log("enter a config name", "err")
@@ -87,46 +91,69 @@ local function init(Hub, UI)
 		end
 		name = name:gsub("[^%w_%-]", "_")
 		if saveConfig(Hub, name) then
-			Hub:Log("saved config: " .. name)
+			Hub:Log("saved: " .. name)
 			Hub:Notify("config", "saved " .. name, 2)
+			refreshDropdown()
 		end
 	end)
 
-	tab:Button("load config", function()
-		local name = configInput.Get()
-		if not name or name == "" then
-			Hub:Log("enter a config name to load", "err")
-			return
-		end
-		name = name:gsub("[^%w_%-]", "_")
-		if loadConfig(Hub, name) then
-			Hub:Log("loaded config: " .. name)
-			Hub:Notify("config", "loaded " .. name .. " — toggle features to sync ui", 3)
-		end
-	end)
+	----------------------------------------------------------------
+	-- Load / Delete
+	----------------------------------------------------------------
+	tab:Section("manage configs")
 
-	tab:Button("delete config", function()
-		local name = configInput.Get()
-		if not name or name == "" then
-			Hub:Log("enter a config name to delete", "err")
-			return
-		end
-		name = name:gsub("[^%w_%-]", "_")
-		if deleteConfig(Hub, name) then
-			Hub:Log("deleted config: " .. name)
-			Hub:Notify("config", "deleted " .. name, 2)
-		end
-	end)
+	local configList = scanConfigs()
+	if #configList == 0 then table.insert(configList, "(none)") end
 
-	tab:Button("list configs", function()
-		local configs = listConfigs()
-		if #configs == 0 then
-			Hub:Log("no saved configs")
+	local dropdown = tab:Choice("config", configList, configList[1], function() end)
+
+	refreshDropdown = function()
+		local fresh = scanConfigs()
+		for i = #configList, 1, -1 do table.remove(configList, i) end
+		if #fresh == 0 then
+			table.insert(configList, "(none)")
 		else
-			Hub:Log("configs: " .. table.concat(configs, ", "))
+			for _, n in ipairs(fresh) do table.insert(configList, n) end
+		end
+		local cur = dropdown.Get()
+		if not table.find(configList, cur) then
+			dropdown:Set(configList[1])
+		end
+	end
+
+	tab:Button("load", function()
+		local name = dropdown.Get()
+		if not name or name == "" or name == "(none)" then
+			Hub:Log("no config selected", "err")
+			return
+		end
+		if loadConfig(Hub, name) then
+			Hub:Log("loaded: " .. name)
+			Hub:Notify("config", "loaded " .. name, 2)
 		end
 	end)
 
+	tab:Button("delete", function()
+		local name = dropdown.Get()
+		if not name or name == "" or name == "(none)" then
+			Hub:Log("no config selected", "err")
+			return
+		end
+		if deleteConfig(Hub, name) then
+			Hub:Log("deleted: " .. name)
+			Hub:Notify("config", "deleted " .. name, 2)
+			refreshDropdown()
+		end
+	end)
+
+	tab:Button("refresh list", function()
+		refreshDropdown()
+		Hub:Log("config list refreshed")
+	end)
+
+	----------------------------------------------------------------
+	-- System
+	----------------------------------------------------------------
 	tab:Section("system")
 
 	tab:Button("unload photon", function()
