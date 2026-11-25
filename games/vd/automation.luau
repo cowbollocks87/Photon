@@ -8,42 +8,76 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 ---------------------------------------------------------------------------
--- Remote references — skill check
+-- Live-lookup helpers (instances may be recreated between matches)
 ---------------------------------------------------------------------------
-local genRemotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Generator")
-local genSCEvent = genRemotes:WaitForChild("SkillCheckEvent")
-local genSCResult = genRemotes:WaitForChild("SkillCheckResultEvent")
+local function getRemotes()
+	local ok, r = pcall(function()
+		return ReplicatedStorage:FindFirstChild("Remotes")
+	end)
+	return ok and r or nil
+end
 
-local healSCEvent, healSCResult
-pcall(function()
-	local h = ReplicatedStorage.Remotes.Healing
-	healSCEvent = h:FindFirstChild("SkillCheckEvent")
-	healSCResult = h:FindFirstChild("SkillCheckResultEvent")
-end)
+local function getGenSCEvent()
+	local r = getRemotes()
+	local g = r and r:FindFirstChild("Generator")
+	return g and g:FindFirstChild("SkillCheckEvent")
+end
+
+local function getGenSCResult()
+	local r = getRemotes()
+	local g = r and r:FindFirstChild("Generator")
+	return g and g:FindFirstChild("SkillCheckResultEvent")
+end
+
+local function getHealSCEvent()
+	local r = getRemotes()
+	local h = r and r:FindFirstChild("Healing")
+	return h and h:FindFirstChild("SkillCheckEvent")
+end
+
+local function getHealSCResult()
+	local r = getRemotes()
+	local h = r and r:FindFirstChild("Healing")
+	return h and h:FindFirstChild("SkillCheckResultEvent")
+end
+
+local function getParryRemotes()
+	local r = getRemotes()
+	local items = r and r:FindFirstChild("Items")
+	local pd = items and items:FindFirstChild("Parrying Dagger")
+	if not pd then return nil, nil end
+	return pd:FindFirstChild("parry"), pd:FindFirstChild("parryResult")
+end
+
+local function getSlowEvent()
+	local r = getRemotes()
+	local m = r and r:FindFirstChild("Mechanics")
+	return m and m:FindFirstChild("Slow")
+end
 
 ---------------------------------------------------------------------------
--- Remote references — parry
----------------------------------------------------------------------------
-local parryEvent, parryResult
-pcall(function()
-	local pd = ReplicatedStorage.Remotes.Items["Parrying Dagger"]
-	parryEvent = pd.parry
-	parryResult = pd.parryResult
-end)
-
-local slowEvent
-pcall(function()
-	slowEvent = ReplicatedStorage.Remotes.Mechanics.Slow
-end)
-
----------------------------------------------------------------------------
--- Skill check UI references
+-- Skill check UI references (live lookup)
 ---------------------------------------------------------------------------
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local SCGui = PlayerGui:WaitForChild("SkillCheckPromptGui")
-local Check = SCGui:WaitForChild("Check")
-local Line = Check:WaitForChild("Line")
-local Goal = Check:WaitForChild("Goal")
+
+local function getSCGui()
+	return PlayerGui:FindFirstChild("SkillCheckPromptGui")
+end
+
+local function getCheck()
+	local sg = getSCGui()
+	return sg and sg:FindFirstChild("Check")
+end
+
+local function getLine()
+	local c = getCheck()
+	return c and c:FindFirstChild("Line")
+end
+
+local function getGoal()
+	local c = getCheck()
+	return c and c:FindFirstChild("Goal")
+end
 
 ---------------------------------------------------------------------------
 -- Keybind + hook (shared — action-aware tagging)
@@ -157,13 +191,17 @@ local function directFire(resultEvent, gen, genPoint, sessionId, target)
 	local pts = target == "great" and 1 or 0
 	resultEvent:FireServer(result, pts, gen, genPoint, sessionId, char)
 	pcall(function()
-		TweenService:Create(Line, TweenInfo.new(0), {Rotation = Line.Rotation}):Play()
+		local line = getLine()
+		if line then TweenService:Create(line, TweenInfo.new(0), {Rotation = line.Rotation}):Play() end
 	end)
 	task.delay(0.15, function()
 		pcall(function()
-			Check.Visible = false
-			Line.Rotation = 0
-			Goal.Rotation = 0
+			local check = getCheck()
+			local line = getLine()
+			local goal = getGoal()
+			if check then check.Visible = false end
+			if line then line.Rotation = 0 end
+			if goal then goal.Rotation = 0 end
 		end)
 	end)
 end
@@ -192,10 +230,12 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 			if renderConn then renderConn:Disconnect(); renderConn = nil end
 			return
 		end
-		if not Check.Visible then return end
+		local check = getCheck()
+		if not check or not check.Visible then return end
 
 		if not targetRot then
-			local gr = Goal.Rotation
+			local goal = getGoal()
+			local gr = goal and goal.Rotation or 0
 			if target == "great" then
 				targetRot = gr + 104 + bellRand() * 8
 			else
@@ -203,7 +243,8 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 			end
 		end
 
-		if Line.Rotation < targetRot then return end
+		local line = getLine()
+		if not line or line.Rotation < targetRot then return end
 
 		fired = true
 
@@ -214,7 +255,8 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 		if inputSent then
 			local re, g, gp, sid, tgt = resultEvent, gen, genPoint, sessionId, target
 			task.delay(0.2, function()
-				if Check.Visible and autoSC.enabled then
+				local c2 = getCheck()
+				if c2 and c2.Visible and autoSC.enabled then
 					directFire(re, g, gp, sid, tgt)
 				end
 			end)
@@ -227,10 +269,12 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 	end)
 end
 
-local function onSkillCheck(resultEvent, p1, p2, p3, p4)
+local function onSkillCheck(getResultEvent, p1, p2, p3, p4)
 	if not autoSC.enabled then return end
 	if p4 ~= LocalPlayer.Character then return end
-	startWatching(resultEvent, p1, p2, p3)
+	local re = getResultEvent()
+	if not re then return end
+	startWatching(re, p1, p2, p3)
 end
 
 ---------------------------------------------------------------------------
@@ -293,10 +337,13 @@ end
 
 local function directParry()
 	local char = LocalPlayer.Character
-	if not char or not parryEvent then return end
-	parryEvent:FireServer(char)
+	if not char then return end
+	local pe = select(1, getParryRemotes())
+	if not pe then return end
+	pe:FireServer(char)
 	pcall(function()
-		if slowEvent then slowEvent:Fire(0, 1, 0) end
+		local se = getSlowEvent()
+		if se then se:Fire(0, 1, 0) end
 	end)
 end
 
@@ -389,7 +436,11 @@ local function startRadiusRender()
 			if radiusPart then radiusPart.Transparency = 1 end
 			return
 		end
-		local myRoot = getMyRoot()
+		local myRoot = cachedMyRoot
+		if not myRoot or not myRoot.Parent then
+			refreshMyRoot()
+			myRoot = cachedMyRoot
+		end
 		if not myRoot then
 			if radiusPart then radiusPart.Transparency = 1 end
 			return
@@ -567,15 +618,37 @@ local function init(Hub, UI)
 		autoSC.rate = v
 	end, { Step = 5, Suffix = "%" })
 
-	Hub:_track(genSCEvent.OnClientEvent:Connect(function(p1, p2, p3, p4, p5)
-		onSkillCheck(genSCResult, p1, p2, p3, p4)
-	end))
+	local scConns = {}
+	local lastGenSC, lastHealSC = nil, nil
 
-	if healSCEvent and healSCResult then
-		Hub:_track(healSCEvent.OnClientEvent:Connect(function(p1, p2, p3, p4, p5)
-			onSkillCheck(healSCResult, p1, p2, p3, p4)
-		end))
+	local function hookSCEvents()
+		local genEv = getGenSCEvent()
+		if genEv and genEv ~= lastGenSC then
+			if scConns.gen then pcall(scConns.gen.Disconnect, scConns.gen) end
+			lastGenSC = genEv
+			scConns.gen = genEv.OnClientEvent:Connect(function(p1, p2, p3, p4)
+				onSkillCheck(getGenSCResult, p1, p2, p3, p4)
+			end)
+		end
+		local healEv = getHealSCEvent()
+		if healEv and healEv ~= lastHealSC then
+			if scConns.heal then pcall(scConns.heal.Disconnect, scConns.heal) end
+			lastHealSC = healEv
+			scConns.heal = healEv.OnClientEvent:Connect(function(p1, p2, p3, p4)
+				onSkillCheck(getHealSCResult, p1, p2, p3, p4)
+			end)
+		end
 	end
+
+	hookSCEvents()
+	Hub:_track(RunService.Heartbeat:Connect(function()
+		if not autoSC.enabled then return end
+		local genEv = getGenSCEvent()
+		local healEv = getHealSCEvent()
+		if genEv ~= lastGenSC or healEv ~= lastHealSC then
+			hookSCEvents()
+		end
+	end))
 
 	----------------------------------------------------------------
 	-- Parry section
@@ -676,6 +749,8 @@ local function init(Hub, UI)
 		teardownParryWatcher()
 		stopRadiusRender()
 		destroyRadiusPart()
+		for _, c in pairs(scConns) do pcall(c.Disconnect, c) end
+		table.clear(scConns)
 	end)
 end
 
