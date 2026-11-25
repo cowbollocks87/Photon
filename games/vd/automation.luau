@@ -101,7 +101,12 @@ local autoParry = {
 	showRadius = false,
 	faceCheck = true,
 	faceCone = 70,
+	ignoreHiddenMark = false,
+	ignoreDarkSeverance = false,
+	ignoreFrenzy = false,
 }
+
+local frenzyActive = false
 
 local renderConn = nil
 
@@ -232,9 +237,42 @@ end
 -- Auto parry — killer detection + animation watching
 ---------------------------------------------------------------------------
 local M1_ANIMS = {
-	["rbxassetid://84926129581106"] = true,
+	["rbxassetid://84926129581106"]  = true, -- veil m1
+	["rbxassetid://138720291317243"] = true, -- jacket tony attack
+	["rbxassetid://115244153053858"] = true, -- jacket cobra lunge windup
+	["rbxassetid://130593238885843"] = true, -- jacket cobra post-lunge
+	["rbxassetid://117070354890871"] = true, -- jacket swan chainsaw rev
+	["rbxassetid://106871536134254"] = true, -- jacket swan post-rev sprint
 }
 
+local ANIM_BLACKLIST = {
+	["rbxassetid://134450878841800"] = true, -- butcher chain throw
+	["rbxassetid://129669521834246"] = true, -- veil equip spear
+	["rbxassetid://84404617799721"]  = true, -- veil spear idle
+	["rbxassetid://77303734522729"]  = true, -- veil spear charge start
+	["rbxassetid://87436543050891"]  = true, -- veil spear charge loop
+	["rbxassetid://79809716042968"]  = true, -- veil through the veil start
+	["rbxassetid://122765810542358"] = true, -- veil through the veil loop
+	["rbxassetid://101443662521580"] = true, -- veil spear throw
+	["rbxassetid://127622545856523"] = true, -- veil spear throw
+	["rbxassetid://71001061734896"]  = true, -- veil put away spear
+	["rbxassetid://75613723058031"]  = true, -- abysswalker corrupt
+	["rbxassetid://77477445889320"]  = true, -- stalker evil within grab
+	["rbxassetid://76744850905644"]  = true, -- stalker evil within slam
+}
+
+local OPTIONAL_IGNORE = {
+	hidden_mark = {
+		["rbxassetid://98163597193511"]  = true,
+	},
+	dark_severance = {
+		["rbxassetid://100014992013740"] = true,
+	},
+}
+
+local FRENZY_START  = "rbxassetid://106776288044176"
+local FRENZY_CANCEL = "rbxassetid://140115024869914"
+local M1_ANIM_NAMES = { lungehold = true, attack = true }
 
 local fakeParryInput = {
 	KeyCode = Enum.KeyCode.Unknown,
@@ -383,6 +421,7 @@ local function teardownParryWatcher()
 	end
 	watchingKiller = nil
 	watchedAnimator = nil
+	frenzyActive = false
 end
 
 local function findKiller()
@@ -401,7 +440,17 @@ local function connectAnimator(animator, char)
 		if not autoParry.enabled then return end
 
 		local id = track.Animation and track.Animation.AnimationId or ""
-		local isKnown = M1_ANIMS[id]
+		local animName = track.Animation and track.Animation.Name or ""
+
+		if id == FRENZY_START then frenzyActive = true; return end
+		if id == FRENZY_CANCEL then frenzyActive = false; return end
+
+		if ANIM_BLACKLIST[id] then return end
+		if autoParry.ignoreHiddenMark and OPTIONAL_IGNORE.hidden_mark[id] then return end
+		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then return end
+		if autoParry.ignoreFrenzy and frenzyActive then return end
+
+		local isKnown = M1_ANIMS[id] or M1_ANIM_NAMES[animName]
 
 		if not isKnown then
 			local len = track.Length
@@ -557,6 +606,20 @@ local function init(Hub, UI)
 	tab:Slider("facing cone", 30, 120, autoParry.faceCone, function(v)
 		autoParry.faceCone = v
 	end, { Step = 10, Suffix = "\194\176" })
+
+	tab:Section("ignore list")
+
+	tab:Toggle("ignore hidden mark", false, function(on)
+		autoParry.ignoreHiddenMark = on
+	end)
+
+	tab:Toggle("ignore dark severance", false, function(on)
+		autoParry.ignoreDarkSeverance = on
+	end)
+
+	tab:Toggle("ignore frenzy", false, function(on)
+		autoParry.ignoreFrenzy = on
+	end)
 
 	local lastParryCheck = 0
 	Hub:_track(RunService.Heartbeat:Connect(function()
