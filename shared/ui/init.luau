@@ -196,6 +196,7 @@ function UI.new(opts)
 	self._appearance = { accent = "white" }
 	self._keybinds = {}
 	self._keybindToggles = {}
+	self._keybindLabels = {}
 	self._keybindRenders = {}
 	self._keybindListening = nil
 	self.NotificationsEnabled = true
@@ -310,7 +311,12 @@ function UI.new(opts)
 		for bindId, boundKey in pairs(self._keybinds) do
 			if boundKey == kn then
 				local toggle = self._keybindToggles[bindId]
-				if toggle then toggle:Set(not toggle.Get()) end
+				if toggle then
+					local newState = not toggle.Get()
+					toggle:Set(newState)
+					local label = self._keybindLabels[bindId] or bindId
+					self:Notify(label, newState and "enabled" or "disabled", 1.5)
+				end
 			end
 		end
 	end))
@@ -419,8 +425,9 @@ function UI:SetToastOffset(ox, oy)
 	self:SetToastPosition(self._appearance.toastPos)
 end
 
-function UI:RegisterKeybind(id, toggle)
+function UI:RegisterKeybind(id, toggle, label)
 	self._keybindToggles[id] = toggle
+	if label then self._keybindLabels[id] = label end
 end
 
 function UI:SetKeybind(id, keyCode)
@@ -835,7 +842,7 @@ function Tab:Toggle(label, default, callback, bindId)
 			bindEaten = true
 			Hub:ClearKeybind(bindId)
 		end)
-		Hub:RegisterKeybind(bindId, {Set = function(_, v) set(v == true) end, Get = function() return state end})
+		Hub:RegisterKeybind(bindId, {Set = function(_, v) set(v == true) end, Get = function() return state end}, label)
 	end
 
 	return {Set = function(_, v) set(v == true) end, Get = function() return state end}

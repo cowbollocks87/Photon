@@ -833,7 +833,7 @@ local function init(Hub, UI)
 				end,
 				Get = function() return state.enabled end,
 			}
-			Hub:RegisterKeybind(bindId, toggleHandle)
+			Hub:RegisterKeybind(bindId, toggleHandle, name)
 		end
 
 		tab.Order = tab.Order + 1
