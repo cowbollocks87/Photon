@@ -86,12 +86,34 @@ local zombieTrack = {
 	ignoreDead = false,
 }
 
+local windowTrack = {
+	enabled = false,
+	color = "cyan",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showDistance = true,
+	depthMode = "alwaysontop",
+}
+
+local palletTrack = {
+	enabled = false,
+	color = "yellow",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showDistance = true,
+	depthMode = "alwaysontop",
+}
+
 local espData = {}
 local selfEspData = nil
 local botEspData = {}
 local botWatchers = {}
 local trapEspData = {}
 local zombieEspData = {}
+local windowEspData = {}
+local palletEspData = {}
 local highlightFolder = nil
 
 ---------------------------------------------------------------------------
@@ -235,6 +257,47 @@ local function refreshZombieHighlights()
 	for _, data in pairs(zombieEspData) do
 		if data.highlight then
 			applyZombieHighlight(data.highlight)
+		end
+	end
+end
+
+local function applyWindowHighlight(hl)
+	local c = COLORS[windowTrack.color] or COLORS.white
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = windowTrack.outlineTransparency
+	hl.FillTransparency = windowTrack.fillTransparency
+	hl.DepthMode = DEPTH_MAP[windowTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshWindowHighlights()
+	for _, data in pairs(windowEspData) do
+		if data.highlight then
+			applyWindowHighlight(data.highlight)
+		end
+	end
+end
+
+local function dimColor(c)
+	local h, s, v = c:ToHSV()
+	return Color3.fromHSV(h, s, v * 0.55)
+end
+
+local function applyPalletHighlight(hl, model)
+	local c = COLORS[palletTrack.color] or COLORS.white
+	local state = model:GetAttribute("PalletState")
+	if state == "Dropped" then c = dimColor(c) end
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = palletTrack.outlineTransparency
+	hl.FillTransparency = palletTrack.fillTransparency
+	hl.DepthMode = DEPTH_MAP[palletTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshPalletHighlights()
+	for model, data in pairs(palletEspData) do
+		if data.highlight then
+			applyPalletHighlight(data.highlight, model)
 		end
 	end
 end
@@ -472,6 +535,96 @@ local function createZombieESP(model)
 	zombieEspData[model] = data
 end
 
+local function isWindow(inst)
+	if not inst:IsA("Model") then return false end
+	if inst.Name ~= "Window" then return false end
+	return inst:FindFirstChild("Bottom") ~= nil
+		and inst:FindFirstChild("VaultTrigger") ~= nil
+end
+
+local function removeWindowESP(model)
+	local data = windowEspData[model]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	local bottom = model:FindFirstChild("Bottom")
+	if bottom and data.origTransparency ~= nil then
+		bottom.Transparency = data.origTransparency
+	end
+	windowEspData[model] = nil
+end
+
+local function createWindowESP(model)
+	if windowEspData[model] then return end
+
+	local bottom = model:FindFirstChild("Bottom")
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		conn = nil,
+		origTransparency = bottom and bottom.Transparency or 1,
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	data.conn = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then removeWindowESP(model) end
+	end)
+
+	windowEspData[model] = data
+end
+
+local function isPallet(inst)
+	if not inst:IsA("Model") then return false end
+	return inst.Name == "Newpallet"
+end
+
+local function removePalletESP(model)
+	local data = palletEspData[model]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.attrConn then data.attrConn:Disconnect() end
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	palletEspData[model] = nil
+end
+
+local function createPalletESP(model)
+	if palletEspData[model] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		conn = nil,
+		attrConn = nil,
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	data.conn = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then removePalletESP(model) end
+	end)
+
+	data.attrConn = model.AttributeChanged:Connect(function(attr)
+		if attr == "PalletState" and data.highlight then
+			applyPalletHighlight(data.highlight, model)
+		end
+	end)
+
+	palletEspData[model] = data
+end
+
 ---------------------------------------------------------------------------
 -- Render loop
 ---------------------------------------------------------------------------
@@ -489,6 +642,22 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 		for _, data in pairs(trapEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+		end
+		for _, data in pairs(zombieEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+		end
+		for model, data in pairs(windowEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+			local bottom = model:FindFirstChild("Bottom")
+			if bottom and data.origTransparency ~= nil then
+				bottom.Transparency = data.origTransparency
+			end
+		end
+		for _, data in pairs(palletEspData) do
 			if data.highlight then data.highlight.Enabled = false end
 			if data.text then data.text.Visible = false end
 		end
@@ -703,6 +872,99 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 	end
+
+	-- window ESP
+	for model, data in pairs(windowEspData) do
+		local active = windowTrack.enabled and model.Parent ~= nil
+		local bottom = model:FindFirstChild("Bottom")
+
+		if active then
+			if bottom then bottom.Transparency = 0 end
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				applyWindowHighlight(data.highlight)
+				data.highlight.Adornee = bottom or model
+				data.highlight.Parent = getHighlightParent()
+			end
+			data.highlight.Enabled = true
+		else
+			if data.highlight then data.highlight.Enabled = false end
+			if bottom and data.origTransparency ~= nil then
+				bottom.Transparency = data.origTransparency
+			end
+		end
+
+		if active and windowTrack.textOverlay then
+			local part = bottom or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 1.5, 0))
+				if onScreen then
+					local label = "[Window]"
+					if windowTrack.showDistance then
+						local dist = (part.Position - refPos).Magnitude
+						label = label .. " [" .. math.floor(dist) .. "m]"
+					end
+					data.text.Text = label
+					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+					data.text.Color = COLORS[windowTrack.color] or COLORS.white
+					data.text.Visible = true
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
+
+	-- pallet ESP
+	for model, data in pairs(palletEspData) do
+		local active = palletTrack.enabled and model.Parent ~= nil
+
+		if active then
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				applyPalletHighlight(data.highlight, model)
+				data.highlight.Adornee = model
+				data.highlight.Parent = getHighlightParent()
+			else
+				applyPalletHighlight(data.highlight, model)
+			end
+			data.highlight.Enabled = true
+		else
+			if data.highlight then data.highlight.Enabled = false end
+		end
+
+		if active and palletTrack.textOverlay then
+			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+				if onScreen then
+					local state = model:GetAttribute("PalletState")
+					local dropped = state == "Dropped"
+					local label = dropped and "[Pallet] (dropped)" or "[Pallet]"
+					if palletTrack.showDistance then
+						local dist = (part.Position - refPos).Magnitude
+						label = label .. " [" .. math.floor(dist) .. "m]"
+					end
+					data.text.Text = label
+					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+					local c = COLORS[palletTrack.color] or COLORS.white
+					if dropped then c = dimColor(c) end
+					data.text.Color = c
+					data.text.Visible = true
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
 end
 
 local function destroyAll()
@@ -721,6 +983,12 @@ local function destroyAll()
 	end
 	for model in pairs(zombieEspData) do
 		removeZombieESP(model)
+	end
+	for model in pairs(windowEspData) do
+		removeWindowESP(model)
+	end
+	for model in pairs(palletEspData) do
+		removePalletESP(model)
 	end
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
@@ -1309,6 +1577,66 @@ local function init(Hub, UI)
 		end)
 	end)
 
+	local windowHandle = track("window esp", windowTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, windowTrack.color, function(c)
+			windowTrack.color = c
+			refreshWindowHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, windowTrack.depthMode, function(v)
+			windowTrack.depthMode = v
+			refreshWindowHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - windowTrack.fillTransparency, function(v)
+			windowTrack.fillTransparency = 1 - v
+			refreshWindowHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - windowTrack.outlineTransparency, function(v)
+			windowTrack.outlineTransparency = 1 - v
+			refreshWindowHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", windowTrack.textOverlay, function(on)
+			windowTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", windowTrack.showDistance, function(on)
+			windowTrack.showDistance = on
+		end)
+	end)
+
+	local palletHandle = track("pallet esp", palletTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
+			palletTrack.color = c
+			refreshPalletHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, palletTrack.depthMode, function(v)
+			palletTrack.depthMode = v
+			refreshPalletHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - palletTrack.fillTransparency, function(v)
+			palletTrack.fillTransparency = 1 - v
+			refreshPalletHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - palletTrack.outlineTransparency, function(v)
+			palletTrack.outlineTransparency = 1 - v
+			refreshPalletHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", palletTrack.textOverlay, function(on)
+			palletTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", palletTrack.showDistance, function(on)
+			palletTrack.showDistance = on
+		end)
+	end)
+
 	-- connect players
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
@@ -1333,11 +1661,15 @@ local function init(Hub, UI)
 	Hub:_track(workspace.DescendantAdded:Connect(function(desc)
 		if isTrap(desc) then createTrapESP(desc) end
 		if isZombie(desc) then createZombieESP(desc) end
+		if isWindow(desc) then createWindowESP(desc) end
+		if isPallet(desc) then createPalletESP(desc) end
 	end))
 
-	-- scan workspace for zombies
+	-- scan workspace for zombies, windows, pallets
 	for _, desc in ipairs(workspace:GetDescendants()) do
 		if isZombie(desc) then createZombieESP(desc) end
+		if isWindow(desc) then createWindowESP(desc) end
+		if isPallet(desc) then createPalletESP(desc) end
 	end
 
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
@@ -1348,6 +1680,8 @@ local function init(Hub, UI)
 		refreshBotHighlights()
 		refreshTrapHighlights()
 		refreshZombieHighlights()
+		refreshWindowHighlights()
+		refreshPalletHighlights()
 	end
 
 	Hub:RegisterConfig("masterESP", masterESP)
@@ -1357,6 +1691,8 @@ local function init(Hub, UI)
 	Hub:RegisterConfig("botTrack", botTrack, refreshAll)
 	Hub:RegisterConfig("trapTrack", trapTrack, refreshAll)
 	Hub:RegisterConfig("zombieTrack", zombieTrack, refreshAll)
+	Hub:RegisterConfig("windowTrack", windowTrack, refreshAll)
+	Hub:RegisterConfig("palletTrack", palletTrack, refreshAll)
 	Hub:OnConfigLoad(function()
 		masterEnabled = masterESP.enabled
 		masterToggle:Set(masterESP.enabled)
@@ -1366,6 +1702,8 @@ local function init(Hub, UI)
 		botHandle.sync()
 		trapHandle.sync()
 		zombieHandle.sync()
+		windowHandle.sync()
+		palletHandle.sync()
 	end)
 	Hub:RegisterCleanup(destroyAll)
 end
