@@ -1130,6 +1130,20 @@ local function init(Hub, UI)
 	end))
 
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
+
+	local function refreshAll()
+		refreshPlayerHighlights()
+		refreshSelfHighlight()
+		refreshBotHighlights()
+		refreshTrapHighlights()
+	end
+
+	Hub:RegisterConfig("playerTrack", playerTrack, refreshAll)
+	Hub:RegisterConfig("selfTrack", selfTrack, refreshAll)
+	Hub:RegisterConfig("teamESP", teamESP, refreshAll)
+	Hub:RegisterConfig("botTrack", botTrack, refreshAll)
+	Hub:RegisterConfig("trapTrack", trapTrack, refreshAll)
+	Hub:RegisterCleanup(destroyAll)
 end
 
 return { init = init }

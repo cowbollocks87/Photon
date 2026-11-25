@@ -643,6 +643,14 @@ local function init(Hub, UI)
 			setupParryWatcher()
 		end
 	end))
+
+	Hub:RegisterConfig("autoSC", autoSC)
+	Hub:RegisterConfig("autoParry", autoParry)
+	Hub:RegisterCleanup(function()
+		teardownParryWatcher()
+		stopRadiusRender()
+		destroyRadiusPart()
+	end)
 end
 
 return { init = init }

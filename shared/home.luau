@@ -95,6 +95,10 @@ local function build(Hub, gameConfig)
 		Hub:SetAccent(name)
 	end)
 
+	Hub:RegisterConfig("appearance", Hub._appearance, function()
+		Hub:SetAccent(Hub._appearance.accent)
+	end)
+
 	-- quick actions
 	home:Section("quick")
 	home:Button("copy server id", function()

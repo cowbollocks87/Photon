@@ -179,6 +179,8 @@ function UI.new(opts)
 	self.Keybind = opts.Keybind or Enum.KeyCode.RightShift
 	self.User = string.lower(LocalPlayer.Name)
 	self.Tabs, self.Connections, self.Consoles, self.History = {}, {}, {}, {}
+	self._configRegistry, self._cleanups = {}, {}
+	self._appearance = { accent = "white" }
 	self.NotificationsEnabled = true
 	self.Minimized = false
 	self.LineCount, self.ToastCount = 0, 0
@@ -394,6 +396,7 @@ end
 function UI:SetAccent(name)
 	local preset = ACCENTS[name]
 	if not preset then return end
+	self._appearance.accent = name
 	T.accent = preset.color
 	HEX.accent = preset.hex
 	fireAccentChange()
@@ -461,6 +464,73 @@ function UI:Notify(title, body, duration)
 	local fill = Frame(track, {Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.mid})
 	tween(fill, {Size = UDim2.fromScale(0, 1)}, TweenInfo.new(duration, Enum.EasingStyle.Linear))
 	task.delay(duration, function() if toast.Parent then toast:Destroy() end end)
+end
+
+function UI:RegisterConfig(key, state, refresh)
+	self._configRegistry[key] = { state = state, refresh = refresh }
+end
+
+function UI:RegisterCleanup(fn)
+	table.insert(self._cleanups, fn)
+end
+
+function UI:GetConfigSnapshot()
+	local snap = {}
+	for key, entry in pairs(self._configRegistry) do
+		local copy = {}
+		for k, v in pairs(entry.state) do
+			if type(v) ~= "function" and type(v) ~= "userdata" and type(v) ~= "table" then
+				copy[k] = v
+			elseif type(v) == "table" then
+				local inner = {}
+				for ik, iv in pairs(v) do
+					if type(iv) ~= "function" and type(iv) ~= "userdata" and type(iv) ~= "table" then
+						inner[ik] = iv
+					elseif type(iv) == "table" then
+						local deep = {}
+						for dk, dv in pairs(iv) do
+							if type(dv) ~= "function" and type(dv) ~= "userdata" then
+								deep[dk] = dv
+							end
+						end
+						inner[ik] = deep
+					end
+				end
+				copy[k] = inner
+			end
+		end
+		snap[key] = copy
+	end
+	return snap
+end
+
+function UI:ApplyConfig(snap)
+	for key, saved in pairs(snap) do
+		local entry = self._configRegistry[key]
+		if entry then
+			for k, v in pairs(saved) do
+				if type(v) == "table" and type(entry.state[k]) == "table" then
+					for ik, iv in pairs(v) do
+						if type(iv) == "table" and type(entry.state[k][ik]) == "table" then
+							for dk, dv in pairs(iv) do
+								entry.state[k][ik][dk] = dv
+							end
+						else
+							entry.state[k][ik] = iv
+						end
+					end
+				else
+					entry.state[k] = v
+				end
+			end
+			if entry.refresh then pcall(entry.refresh) end
+		end
+	end
+end
+
+function UI:Unload()
+	for _, fn in ipairs(self._cleanups) do pcall(fn) end
+	self:Destroy()
 end
 
 function UI:Destroy()
