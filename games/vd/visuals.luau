@@ -25,6 +25,12 @@ local COLOR_NAMES = {"white", "red", "blue", "green", "yellow", "purple", "cyan"
 ---------------------------------------------------------------------------
 local masterEnabled = false
 
+local DEPTH_MODES = { "alwaysontop", "occluded" }
+local DEPTH_MAP = {
+	alwaysontop = Enum.HighlightDepthMode.AlwaysOnTop,
+	occluded    = Enum.HighlightDepthMode.Occluded,
+}
+
 local playerTrack = {
 	enabled = false,
 	color = "white",
@@ -33,6 +39,7 @@ local playerTrack = {
 	textOverlay = true,
 	showDistance = true,
 	ignoreSpectator = false,
+	depthMode = "alwaysontop",
 }
 
 local selfTrack = {
@@ -40,6 +47,7 @@ local selfTrack = {
 	color = "white",
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
+	depthMode = "alwaysontop",
 }
 
 local teamESP = {
@@ -64,6 +72,7 @@ local botTrack = {
 	outlineTransparency = 0,
 	textOverlay = true,
 	showDistance = true,
+	depthMode = "alwaysontop",
 }
 
 local trapTrack = {
@@ -73,6 +82,7 @@ local trapTrack = {
 	outlineTransparency = 0,
 	textOverlay = true,
 	showDistance = true,
+	depthMode = "alwaysontop",
 }
 
 local espData = {}
@@ -141,7 +151,7 @@ local function applyPlayerHighlight(hl, player)
 	hl.FillColor = c
 	hl.OutlineTransparency = playerTrack.outlineTransparency
 	hl.FillTransparency = playerTrack.fillTransparency
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.DepthMode = DEPTH_MAP[playerTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
 end
 
 local function applySelfHighlight(hl)
@@ -150,7 +160,7 @@ local function applySelfHighlight(hl)
 	hl.FillColor = c
 	hl.OutlineTransparency = selfTrack.outlineTransparency
 	hl.FillTransparency = selfTrack.fillTransparency
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.DepthMode = DEPTH_MAP[selfTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
 end
 
 local function getBotColor(model)
@@ -168,7 +178,7 @@ local function applyBotHighlight(hl, model)
 	hl.FillColor = c
 	hl.OutlineTransparency = botTrack.outlineTransparency
 	hl.FillTransparency = botTrack.fillTransparency
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.DepthMode = DEPTH_MAP[botTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
 end
 
 local function refreshPlayerHighlights()
@@ -199,7 +209,7 @@ local function applyTrapHighlight(hl)
 	hl.FillColor = c
 	hl.OutlineTransparency = trapTrack.outlineTransparency
 	hl.FillTransparency = trapTrack.fillTransparency
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.DepthMode = DEPTH_MAP[trapTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
 end
 
 local function refreshTrapHighlights()
@@ -984,6 +994,11 @@ local function init(Hub, UI)
 			refreshPlayerHighlights()
 		end)
 
+		sub:Choice("depth mode", DEPTH_MODES, playerTrack.depthMode, function(v)
+			playerTrack.depthMode = v
+			refreshPlayerHighlights()
+		end)
+
 		sub:Slider("fill opacity", 0, 1, 1 - playerTrack.fillTransparency, function(v)
 			playerTrack.fillTransparency = 1 - v
 			refreshPlayerHighlights()
@@ -1013,6 +1028,11 @@ local function init(Hub, UI)
 			refreshSelfHighlight()
 		end)
 
+		sub:Choice("depth mode", DEPTH_MODES, selfTrack.depthMode, function(v)
+			selfTrack.depthMode = v
+			refreshSelfHighlight()
+		end)
+
 		sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
 			selfTrack.fillTransparency = 1 - v
 			refreshSelfHighlight()
@@ -1027,6 +1047,11 @@ local function init(Hub, UI)
 	track("bot esp", botTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
 			botTrack.color = c
+			refreshBotHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, botTrack.depthMode, function(v)
+			botTrack.depthMode = v
 			refreshBotHighlights()
 		end)
 
@@ -1052,6 +1077,11 @@ local function init(Hub, UI)
 	track("bear trap esp", trapTrack, function(sub)
 		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
 			trapTrack.color = c
+			refreshTrapHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, trapTrack.depthMode, function(v)
+			trapTrack.depthMode = v
 			refreshTrapHighlights()
 		end)
 

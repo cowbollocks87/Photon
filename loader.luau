@@ -14,7 +14,9 @@ local FILES = {
 	["shared/home"]         = "shared/home.luau",
 	["games/vd"]            = "games/vd/init.luau",
 	["games/vd/visuals"]    = "games/vd/visuals.luau",
-	["games/vd/automation"] = "games/vd/automation.luau",
+	["games/vd/automation"]    = "games/vd/automation.luau",
+	["games/vd/enhancements"] = "games/vd/enhancements.luau",
+	["games/vd/utilities"]    = "games/vd/utilities.luau",
 }
 
 local vinstIsA = function(_, className)
