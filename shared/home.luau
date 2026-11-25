@@ -88,6 +88,13 @@ local function build(Hub, gameConfig)
 	Hub:_track(Players.PlayerAdded:Connect(addPlayerRow))
 	Hub:_track(Players.PlayerRemoving:Connect(removePlayerRow))
 
+	-- appearance
+	home:Section("appearance")
+	local accentList = Hub.AccentList or {"white"}
+	home:Choice("accent color", accentList, "white", function(name)
+		Hub:SetAccent(name)
+	end)
+
 	-- quick actions
 	home:Section("quick")
 	home:Button("copy server id", function()

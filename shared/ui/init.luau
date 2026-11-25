@@ -50,6 +50,23 @@ local T = {
 }
 local HEX = {dim = "#606060", faint = "#3A3A3A", text = "#E2E2E2"}
 
+local ACCENTS = {
+	white      = {color = grey(255),                        hex = "#FFFFFF"},
+	["baby blue"]  = {color = Color3.fromRGB(137, 207, 240), hex = "#89CFF0"},
+	turquoise  = {color = Color3.fromRGB(72, 209, 204),    hex = "#48D1CC"},
+	["sage green"] = {color = Color3.fromRGB(152, 190, 140), hex = "#98BE8C"},
+	maroon     = {color = Color3.fromRGB(178, 70, 70),     hex = "#B24646"},
+}
+local ACCENT_LIST = {"white", "baby blue", "turquoise", "sage green", "maroon"}
+T.accent = ACCENTS.white.color
+HEX.accent = ACCENTS.white.hex
+
+local accentCallbacks = {}
+local function onAccentChange(fn) table.insert(accentCallbacks, fn) end
+local function fireAccentChange()
+	for _, fn in ipairs(accentCallbacks) do pcall(fn) end
+end
+
 local FAMILY = "rbxasset://fonts/families/RobotoMono.json"
 local FONT   = Font.new(FAMILY, Enum.FontWeight.Regular)
 local FONT_M = Font.new(FAMILY, Enum.FontWeight.Medium)
@@ -337,7 +354,7 @@ end
 function UI:Tab(name)
 	local index = #self.Tabs + 1
 	local btn = Button(self.TabList, "", {Name = "Tab_" .. name, LayoutOrder = index, Size = UDim2.new(1, 0, 0, 24)})
-	local caret = Text(btn, ">", {Name = "Caret", Position = U(8, 0), Size = UDim2.new(0, 12, 1, 0), TextColor3 = T.white, Visible = false})
+	local caret = Text(btn, ">", {Name = "Caret", Position = U(8, 0), Size = UDim2.new(0, 12, 1, 0), TextColor3 = T.accent, Visible = false})
 	local label = Text(btn, name, {Name = "Label", Position = U(22, 0), Size = UDim2.new(1, -52, 1, 0), TextColor3 = T.mid})
 	Text(btn, string.format("%02d", index), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = U(20, 24),
 		TextSize = 10, TextColor3 = T.dim, TextXAlignment = RIGHT})
@@ -365,13 +382,25 @@ function UI:SelectTab(tab)
 		local on = t == tab
 		t.Page.Visible = on
 		t.Caret.Visible = on
-		t._label.TextColor3 = on and T.white or T.mid
+		t._label.TextColor3 = on and T.accent or T.mid
 		t._label.FontFace = on and FONT_M or FONT
 		t._btn.BackgroundTransparency = on and 0 or 1
 	end
 	self.Active = tab
 	self:_setPath(tab.Name)
 	self.ModeLabel.Text = string.upper(tab.Name)
+end
+
+function UI:SetAccent(name)
+	local preset = ACCENTS[name]
+	if not preset then return end
+	T.accent = preset.color
+	HEX.accent = preset.hex
+	fireAccentChange()
+	for _, t in ipairs(self.Tabs) do
+		t.Caret.TextColor3 = T.accent
+	end
+	if self.Active then self:SelectTab(self.Active) end
 end
 
 function UI:_writeLine(box, entry)
@@ -542,9 +571,9 @@ function Tab:Toggle(label, default, callback)
 	local val = Text(hit, "", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = U(40, ROW_H), TextXAlignment = RIGHT, TextSize = 11})
 	local function render()
 		box.Text = state and "[x]" or "[ ]"
-		box.TextColor3 = state and T.white or T.dim
+		box.TextColor3 = state and T.accent or T.dim
 		val.Text = state and "on" or "off"
-		val.TextColor3 = state and T.white or T.dim
+		val.TextColor3 = state and T.accent or T.dim
 	end
 	local function set(v)
 		state = v
@@ -552,6 +581,7 @@ function Tab:Toggle(label, default, callback)
 		self:_safe(label, callback, state)
 	end
 	render()
+	onAccentChange(render)
 	hit.MouseButton1Click:Connect(function() set(not state) end)
 	return {Set = function(_, v) set(v == true) end, Get = function() return state end}
 end
@@ -576,7 +606,7 @@ function Tab:Slider(label, min, max, default, callback, opts)
 	end
 	local function render()
 		local filled = math.floor((value - min) / (max - min) * BAR_CHARS + 0.5)
-		bar.Text = '[<font color="' .. HEX.text .. '">' .. string.rep("#", filled) .. '</font><font color="' .. HEX.faint .. '">'
+		bar.Text = '[<font color="' .. HEX.accent .. '">' .. string.rep("#", filled) .. '</font><font color="' .. HEX.faint .. '">'
 			.. string.rep("-", BAR_CHARS - filled) .. '</font>]'
 		valueLabel.Text = fmt(value) .. suffix
 	end
@@ -611,6 +641,7 @@ function Tab:Slider(label, min, max, default, callback, opts)
 	row.MouseLeave:Connect(function() tween(bg, {BackgroundTransparency = 1}) end)
 
 	render()
+	onAccentChange(render)
 	return {Set = function(_, v) set(v, true) end, Get = function() return value end}
 end
 
@@ -693,4 +724,5 @@ function Tab:Console(height)
 	return box
 end
 
+UI.AccentList = ACCENT_LIST
 return UI
