@@ -259,6 +259,9 @@ local ANIM_BLACKLIST = {
 	["rbxassetid://75613723058031"]  = true, -- abysswalker corrupt
 	["rbxassetid://77477445889320"]  = true, -- stalker evil within grab
 	["rbxassetid://76744850905644"]  = true, -- stalker evil within slam
+	["rbxassetid://99210996402874"]  = true, -- cure flask throw
+	["rbxassetid://79390410596403"]  = true, -- cure flask idle
+	["rbxassetid://121108316060822"] = true, -- cure flask charge
 }
 
 local OPTIONAL_IGNORE = {
