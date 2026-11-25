@@ -73,11 +73,24 @@ local trapTrack = {
 	depthMode = "alwaysontop",
 }
 
+local zombieTrack = {
+	enabled = false,
+	color = "maroon",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showDistance = true,
+	depthMode = "alwaysontop",
+	ignoreInactive = false,
+	ignoreDead = false,
+}
+
 local espData = {}
 local selfEspData = nil
 local botEspData = {}
 local botWatchers = {}
 local trapEspData = {}
+local zombieEspData = {}
 local highlightFolder = nil
 
 ---------------------------------------------------------------------------
@@ -204,6 +217,23 @@ local function refreshTrapHighlights()
 	for _, data in pairs(trapEspData) do
 		if data.highlight then
 			applyTrapHighlight(data.highlight)
+		end
+	end
+end
+
+local function applyZombieHighlight(hl)
+	local c = COLORS[zombieTrack.color] or COLORS.white
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = zombieTrack.outlineTransparency
+	hl.FillTransparency = zombieTrack.fillTransparency
+	hl.DepthMode = DEPTH_MAP[zombieTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshZombieHighlights()
+	for _, data in pairs(zombieEspData) do
+		if data.highlight then
+			applyZombieHighlight(data.highlight)
 		end
 	end
 end
@@ -401,6 +431,46 @@ local function createTrapESP(model)
 	trapEspData[model] = data
 end
 
+local function isZombie(inst)
+	if not inst:IsA("Model") then return false end
+	if not string.match(inst.Name, "^scp%d*$") then return false end
+	return inst:FindFirstChildWhichIsA("Humanoid") ~= nil
+end
+
+local function removeZombieESP(model)
+	local data = zombieEspData[model]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.attrConn then data.attrConn:Disconnect() end
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	zombieEspData[model] = nil
+end
+
+local function createZombieESP(model)
+	if zombieEspData[model] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		conn = nil,
+		attrConn = nil,
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	data.conn = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then removeZombieESP(model) end
+	end)
+
+	zombieEspData[model] = data
+end
+
 ---------------------------------------------------------------------------
 -- Render loop
 ---------------------------------------------------------------------------
@@ -584,6 +654,54 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 	end
+
+	-- zombie ESP
+	for model, data in pairs(zombieEspData) do
+		local isActive = model:GetAttribute("CorpseCreated0492") == true
+		local isDead = model:GetAttribute("Ragdolled") == true
+		local skip = false
+		if zombieTrack.ignoreInactive and not isActive then skip = true end
+		if zombieTrack.ignoreDead and isDead then skip = true end
+		local active = zombieTrack.enabled and model.Parent ~= nil and not skip
+
+		if active then
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				applyZombieHighlight(data.highlight)
+				data.highlight.Adornee = model
+				data.highlight.Parent = getHighlightParent()
+			end
+			data.highlight.Enabled = true
+		else
+			if data.highlight then data.highlight.Enabled = false end
+		end
+
+		if active and zombieTrack.textOverlay then
+			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if part then
+				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+				if onScreen then
+					local label = "[SCP 049-2]"
+					if isDead then label = "[SCP 049-2] (dead)" end
+					if not isActive and not isDead then label = "[SCP 049-2] (inactive)" end
+					if zombieTrack.showDistance then
+						local dist = (part.Position - refPos).Magnitude
+						label = label .. " [" .. math.floor(dist) .. "m]"
+					end
+					data.text.Text = label
+					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+					data.text.Color = COLORS[zombieTrack.color] or COLORS.white
+					data.text.Visible = true
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
 end
 
 local function destroyAll()
@@ -599,6 +717,9 @@ local function destroyAll()
 	end
 	for model in pairs(trapEspData) do
 		removeTrapESP(model)
+	end
+	for model in pairs(zombieEspData) do
+		removeZombieESP(model)
 	end
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
@@ -1148,6 +1269,44 @@ local function init(Hub, UI)
 		end)
 	end)
 
+	track("scp 049-2 esp", zombieTrack, function(sub)
+		sub:Choice("color", COLOR_NAMES, zombieTrack.color, function(c)
+			zombieTrack.color = c
+			refreshZombieHighlights()
+		end)
+
+		sub:Choice("depth mode", DEPTH_MODES, zombieTrack.depthMode, function(v)
+			zombieTrack.depthMode = v
+			refreshZombieHighlights()
+		end)
+
+		sub:Slider("fill opacity", 0, 1, 1 - zombieTrack.fillTransparency, function(v)
+			zombieTrack.fillTransparency = 1 - v
+			refreshZombieHighlights()
+		end, { Step = 0.1 })
+
+		sub:Slider("outline opacity", 0, 1, 1 - zombieTrack.outlineTransparency, function(v)
+			zombieTrack.outlineTransparency = 1 - v
+			refreshZombieHighlights()
+		end, { Step = 0.1 })
+
+		sub:Toggle("text overlay", zombieTrack.textOverlay, function(on)
+			zombieTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show distance", zombieTrack.showDistance, function(on)
+			zombieTrack.showDistance = on
+		end)
+
+		sub:Toggle("ignore inactive", zombieTrack.ignoreInactive, function(on)
+			zombieTrack.ignoreInactive = on
+		end)
+
+		sub:Toggle("ignore dead", zombieTrack.ignoreDead, function(on)
+			zombieTrack.ignoreDead = on
+		end)
+	end)
+
 	-- connect players
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
@@ -1171,7 +1330,13 @@ local function init(Hub, UI)
 	end
 	Hub:_track(workspace.DescendantAdded:Connect(function(desc)
 		if isTrap(desc) then createTrapESP(desc) end
+		if isZombie(desc) then createZombieESP(desc) end
 	end))
+
+	-- scan workspace for zombies
+	for _, desc in ipairs(workspace:GetDescendants()) do
+		if isZombie(desc) then createZombieESP(desc) end
+	end
 
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
 
@@ -1180,6 +1345,7 @@ local function init(Hub, UI)
 		refreshSelfHighlight()
 		refreshBotHighlights()
 		refreshTrapHighlights()
+		refreshZombieHighlights()
 	end
 
 	Hub:RegisterConfig("playerTrack", playerTrack, refreshAll)
@@ -1187,6 +1353,7 @@ local function init(Hub, UI)
 	Hub:RegisterConfig("teamESP", teamESP, refreshAll)
 	Hub:RegisterConfig("botTrack", botTrack, refreshAll)
 	Hub:RegisterConfig("trapTrack", trapTrack, refreshAll)
+	Hub:RegisterConfig("zombieTrack", zombieTrack, refreshAll)
 	Hub:RegisterCleanup(destroyAll)
 end
 
