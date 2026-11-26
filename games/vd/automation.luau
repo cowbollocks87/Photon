@@ -658,15 +658,7 @@ local function connectAnimator(animator, char)
 		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then return end
 		if autoParry.ignoreFrenzy and frenzyActive then return end
 
-		local isKnown = M1_ANIMS[id] or M1_ANIM_NAMES[animName]
-
-		if not isKnown then
-			local len = track.Length
-			local isHeuristic = track.Priority.Value >= Enum.AnimationPriority.Action.Value
-				and track.Speed >= 0.5 and track.Speed <= 2.0
-				and (len == 0 or (len >= 0.3 and len <= 2.5))
-			if not isHeuristic then return end
-		end
+		if not M1_ANIMS[id] and not M1_ANIM_NAMES[animName] then return end
 
 		local function startWatch()
 			if not autoParry.enabled then return end
