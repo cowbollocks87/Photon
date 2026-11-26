@@ -348,6 +348,7 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 
 	local targetRot = nil
 	local fired = false
+	local lastFireTime = 0
 
 	ksRenderConn = RunService.RenderStepped:Connect(function()
 		if not autoSC.enabled or not ksState then
@@ -366,6 +367,8 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 		if not line then return end
 
 		if fired and line.Rotation < 20 then
+			if os.clock() - lastFireTime < 0.15 then return end
+			pcall(keyrelease, scKey.Value)
 			targetRot = nil
 			fired = false
 		end
@@ -386,7 +389,9 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 		if line.Rotation < targetRot then return end
 
 		fired = true
+		lastFireTime = os.clock()
 
+		pcall(keyrelease, scKey.Value)
 		local inputSent = tryKeypress()
 			or tryGetConnections(fakeInput)
 			or tryFiresignal(fakeInput)
