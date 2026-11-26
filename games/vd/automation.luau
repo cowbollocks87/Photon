@@ -427,12 +427,33 @@ end
 -- Auto parry — killer detection + animation watching
 ---------------------------------------------------------------------------
 local M1_ANIMS = {
-	["rbxassetid://84926129581106"]  = true, -- veil m1
-	["rbxassetid://138720291317243"] = true, -- jacket tony attack
-	["rbxassetid://115244153053858"] = true, -- jacket cobra lunge windup
-	["rbxassetid://130593238885843"] = true, -- jacket cobra post-lunge
-	["rbxassetid://117070354890871"] = true, -- jacket swan chainsaw rev
-	["rbxassetid://106871536134254"] = true, -- jacket swan post-rev sprint
+	-- the stalker
+	["rbxassetid://117042998468241"] = true, -- lungehold
+	["rbxassetid://133963973694098"] = true, -- attack
+	-- the killer
+	["rbxassetid://93902163029544"]  = true, -- lungehold
+	["rbxassetid://75618342544502"]  = true, -- attack
+	-- the hidden
+	["rbxassetid://113255068724446"] = true, -- lungehold
+	["rbxassetid://74968262036854"]  = true, -- attack
+	-- the abysswalker
+	["rbxassetid://125430111937587"] = true, -- lungehold
+	["rbxassetid://101636125032002"] = true, -- attack
+	-- the veil
+	["rbxassetid://84926129581106"]  = true, -- lungehold
+	["rbxassetid://81963230963908"]  = true, -- attack
+	-- the slasher
+	["rbxassetid://129626174716003"] = true, -- lungehold
+	["rbxassetid://113691709436161"] = true, -- attack
+	-- the masked
+	["rbxassetid://105374834496520"] = true, -- lungehold
+	["rbxassetid://111920872708571"] = true, -- attack
+	-- the cure
+	["rbxassetid://135002183282873"] = true, -- lungehold
+	["rbxassetid://121216847022485"] = true, -- attack
+	-- the butcher
+	["rbxassetid://127417297154354"] = true, -- lungehold
+	["rbxassetid://83333467665074"]  = true, -- attack
 }
 
 local ANIM_BLACKLIST = {
@@ -465,7 +486,6 @@ local OPTIONAL_IGNORE = {
 
 local FRENZY_START  = "rbxassetid://106776288044176"
 local FRENZY_CANCEL = "rbxassetid://140115024869914"
-local M1_ANIM_NAMES = { lungehold = true, attack = true }
 
 local fakeParryInput = {
 	KeyCode = Enum.KeyCode.Unknown,
@@ -658,7 +678,7 @@ local function connectAnimator(animator, char)
 		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then return end
 		if autoParry.ignoreFrenzy and frenzyActive then return end
 
-		if not M1_ANIMS[id] and not M1_ANIM_NAMES[animName] then return end
+		if not M1_ANIMS[id] then return end
 
 		local function startWatch()
 			if not autoParry.enabled then return end
