@@ -16,6 +16,7 @@ local FILES = {
 	["games/vd/visuals"]    = "games/vd/visuals.luau",
 	["games/vd/automation"]    = "games/vd/automation.luau",
 	["games/vd/enhancements"] = "games/vd/enhancements.luau",
+	["games/vd/performance"]  = "games/vd/performance.luau",
 	["games/vd/utilities"]    = "games/vd/utilities.luau",
 }
 

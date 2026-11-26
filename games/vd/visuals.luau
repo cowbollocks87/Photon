@@ -106,6 +106,8 @@ local palletTrack = {
 	depthMode = "alwaysontop",
 }
 
+local HubRef = nil
+
 local espData = {}
 local selfEspData = nil
 local botEspData = {}
@@ -626,6 +628,20 @@ local function createPalletESP(model)
 end
 
 ---------------------------------------------------------------------------
+-- Range / opacity helpers
+---------------------------------------------------------------------------
+local function espRangeCheck(dist, rangeEnabled, rangeMax)
+	if rangeEnabled and dist > rangeMax then return false end
+	return true
+end
+
+local function espDistFill(baseFill, dist, rangeMax, distOpacity)
+	if not distOpacity then return baseFill end
+	local t = math.clamp(dist / rangeMax, 0, 1)
+	return baseFill + (1 - baseFill) * t
+end
+
+---------------------------------------------------------------------------
 -- Render loop
 ---------------------------------------------------------------------------
 local function updateESP()
@@ -668,11 +684,19 @@ local function updateESP()
 	local localHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	local refPos = localHrp and localHrp.Position or camPos
 
+	local perf = HubRef and HubRef._perfESP
+	local rangeEnabled = perf and perf.espRange
+	local rangeMax = perf and perf.espRangeMax or 200
+	local distOpacity = perf and perf.espDistOpacity
+
 	-- player ESP
 	for player, data in pairs(espData) do
 		local char = player.Character
 		local skip = playerTrack.ignoreSpectator and getTeamName(player) == "Spectator"
-		local active = playerTrack.enabled and char and not skip
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local dist = hrp and (hrp.Position - refPos).Magnitude or 0
+		local inRange = espRangeCheck(dist, rangeEnabled, rangeMax)
+		local active = playerTrack.enabled and char and not skip and inRange
 
 		if active then
 			if not data.highlight then
@@ -685,9 +709,11 @@ local function updateESP()
 				data.highlight.Adornee = char
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(playerTrack.fillTransparency, dist, rangeMax, distOpacity)
 
 			if teamESP.enabled and teamESP.survivorHealth.enabled and getTeamName(player) == "Survivors" then
 				applyPlayerHighlight(data.highlight, player)
+				data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, dist, rangeMax, distOpacity)
 			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
@@ -700,7 +726,6 @@ local function updateESP()
 				if onScreen then
 					local label = player.DisplayName
 					if playerTrack.showDistance then
-						local dist = (head.Position - refPos).Magnitude
 						label = label .. " [" .. math.floor(dist) .. "m]"
 					end
 					data.text.Text = label
@@ -741,7 +766,10 @@ local function updateESP()
 
 	-- bot ESP
 	for model, data in pairs(botEspData) do
-		local active = botTrack.enabled and model.Parent ~= nil
+		local bHrp = model:FindFirstChild("HumanoidRootPart")
+		local bDist = bHrp and (bHrp.Position - refPos).Magnitude or 0
+		local bInRange = espRangeCheck(bDist, rangeEnabled, rangeMax)
+		local active = botTrack.enabled and model.Parent ~= nil and bInRange
 
 		if active then
 			if not data.highlight then
@@ -751,9 +779,11 @@ local function updateESP()
 				data.highlight.Parent = getHighlightParent()
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(botTrack.fillTransparency, bDist, rangeMax, distOpacity)
 
 			if teamESP.enabled and teamESP.survivorHealth.enabled then
 				applyBotHighlight(data.highlight, model)
+				data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, bDist, rangeMax, distOpacity)
 			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
@@ -766,8 +796,7 @@ local function updateESP()
 				if onScreen then
 					local label = model.Name .. " [BOT]"
 					if botTrack.showDistance then
-						local dist = (head.Position - refPos).Magnitude
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						label = label .. " [" .. math.floor(bDist) .. "m]"
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
@@ -786,7 +815,10 @@ local function updateESP()
 
 	-- trap ESP
 	for model, data in pairs(trapEspData) do
-		local active = trapTrack.enabled and model.Parent ~= nil
+		local tPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		local tDist = tPart and (tPart.Position - refPos).Magnitude or 0
+		local tInRange = espRangeCheck(tDist, rangeEnabled, rangeMax)
+		local active = trapTrack.enabled and model.Parent ~= nil and tInRange
 
 		if active then
 			if not data.highlight then
@@ -796,19 +828,18 @@ local function updateESP()
 				data.highlight.Parent = getHighlightParent()
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(trapTrack.fillTransparency, tDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
 
 		if active and trapTrack.textOverlay then
-			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-			if part then
-				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 1.5, 0))
+			if tPart then
+				local pos, onScreen = Camera:WorldToViewportPoint(tPart.Position + Vector3.new(0, 1.5, 0))
 				if onScreen then
 					local label = "[Bear Trap]"
 					if trapTrack.showDistance then
-						local dist = (part.Position - refPos).Magnitude
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						label = label .. " [" .. math.floor(tDist) .. "m]"
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
@@ -832,7 +863,10 @@ local function updateESP()
 		local skip = false
 		if zombieTrack.ignoreInactive and not isActive then skip = true end
 		if zombieTrack.ignoreDead and isDead then skip = true end
-		local active = zombieTrack.enabled and model.Parent ~= nil and not skip
+		local zPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		local zDist = zPart and (zPart.Position - refPos).Magnitude or 0
+		local zInRange = espRangeCheck(zDist, rangeEnabled, rangeMax)
+		local active = zombieTrack.enabled and model.Parent ~= nil and not skip and zInRange
 
 		if active then
 			if not data.highlight then
@@ -842,21 +876,20 @@ local function updateESP()
 				data.highlight.Parent = getHighlightParent()
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(zombieTrack.fillTransparency, zDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
 
 		if active and zombieTrack.textOverlay then
-			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-			if part then
-				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+			if zPart then
+				local pos, onScreen = Camera:WorldToViewportPoint(zPart.Position + Vector3.new(0, 2, 0))
 				if onScreen then
 					local label = "[SCP 049-2]"
 					if isDead then label = "[SCP 049-2] (dead)" end
 					if not isActive and not isDead then label = "[SCP 049-2] (inactive)" end
 					if zombieTrack.showDistance then
-						local dist = (part.Position - refPos).Magnitude
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						label = label .. " [" .. math.floor(zDist) .. "m]"
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
@@ -875,8 +908,11 @@ local function updateESP()
 
 	-- window ESP
 	for model, data in pairs(windowEspData) do
-		local active = windowTrack.enabled and model.Parent ~= nil
 		local bottom = model:FindFirstChild("Bottom")
+		local wPart = bottom or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		local wDist = wPart and (wPart.Position - refPos).Magnitude or 0
+		local wInRange = espRangeCheck(wDist, rangeEnabled, rangeMax)
+		local active = windowTrack.enabled and model.Parent ~= nil and wInRange
 
 		if active then
 			if bottom then bottom.Transparency = 0 end
@@ -887,6 +923,7 @@ local function updateESP()
 				data.highlight.Parent = getHighlightParent()
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(windowTrack.fillTransparency, wDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 			if bottom and data.origTransparency ~= nil then
@@ -895,14 +932,12 @@ local function updateESP()
 		end
 
 		if active and windowTrack.textOverlay then
-			local part = bottom or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-			if part then
-				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 1.5, 0))
+			if wPart then
+				local pos, onScreen = Camera:WorldToViewportPoint(wPart.Position + Vector3.new(0, 1.5, 0))
 				if onScreen then
 					local label = "[Window]"
 					if windowTrack.showDistance then
-						local dist = (part.Position - refPos).Magnitude
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						label = label .. " [" .. math.floor(wDist) .. "m]"
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
@@ -921,7 +956,10 @@ local function updateESP()
 
 	-- pallet ESP
 	for model, data in pairs(palletEspData) do
-		local active = palletTrack.enabled and model.Parent ~= nil
+		local pPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		local pDist = pPart and (pPart.Position - refPos).Magnitude or 0
+		local pInRange = espRangeCheck(pDist, rangeEnabled, rangeMax)
+		local active = palletTrack.enabled and model.Parent ~= nil and pInRange
 
 		if active then
 			if not data.highlight then
@@ -933,21 +971,20 @@ local function updateESP()
 				applyPalletHighlight(data.highlight, model)
 			end
 			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, pDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
 
 		if active and palletTrack.textOverlay then
-			local part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-			if part then
-				local pos, onScreen = Camera:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+			if pPart then
+				local pos, onScreen = Camera:WorldToViewportPoint(pPart.Position + Vector3.new(0, 2, 0))
 				if onScreen then
 					local state = model:GetAttribute("PalletState")
 					local dropped = state == "Dropped"
 					local label = dropped and "[Pallet] (dropped)" or "[Pallet]"
 					if palletTrack.showDistance then
-						local dist = (part.Position - refPos).Magnitude
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						label = label .. " [" .. math.floor(pDist) .. "m]"
 					end
 					data.text.Text = label
 					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
@@ -1000,6 +1037,7 @@ end
 -- UI
 ---------------------------------------------------------------------------
 local function init(Hub, UI)
+	HubRef = Hub
 	local T = UI.Theme
 	local H = UI.Helpers
 	local C = UI.Constants
