@@ -184,12 +184,15 @@ local function tryFiresignal(fake)
 	end)
 end
 
-local function directFire(resultEvent, gen, genPoint, sessionId, target)
+local function directFire(resultEvent, passArgs, target)
 	local char = LocalPlayer.Character
 	if not char then return end
 	local result = target == "great" and "success" or "neutral"
 	local pts = target == "great" and 1 or 0
-	resultEvent:FireServer(result, pts, gen, genPoint, sessionId, char)
+	local fire = {result, pts}
+	for _, v in ipairs(passArgs) do table.insert(fire, v) end
+	table.insert(fire, char)
+	resultEvent:FireServer(unpack(fire))
 	pcall(function()
 		local line = getLine()
 		if line then TweenService:Create(line, TweenInfo.new(0), {Rotation = line.Rotation}):Play() end
@@ -209,7 +212,7 @@ end
 ---------------------------------------------------------------------------
 -- Skill check core
 ---------------------------------------------------------------------------
-local function startWatching(resultEvent, gen, genPoint, sessionId)
+local function startWatching(resultEvent, passArgs)
 	if renderConn then renderConn:Disconnect() end
 
 	local roll = math.random(1, 100)
@@ -253,15 +256,15 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 			or tryFiresignal(fakeInput)
 
 		if inputSent then
-			local re, g, gp, sid, tgt = resultEvent, gen, genPoint, sessionId, target
+			local re, pa, tgt = resultEvent, passArgs, target
 			task.delay(0.2, function()
 				local c2 = getCheck()
 				if c2 and c2.Visible and autoSC.enabled then
-					directFire(re, g, gp, sid, tgt)
+					directFire(re, pa, tgt)
 				end
 			end)
 		else
-			directFire(resultEvent, gen, genPoint, sessionId, target)
+			directFire(resultEvent, passArgs, target)
 		end
 
 		renderConn:Disconnect()
@@ -269,12 +272,15 @@ local function startWatching(resultEvent, gen, genPoint, sessionId)
 	end)
 end
 
-local function onSkillCheck(getResultEvent, p1, p2, p3, p4)
+local function onSkillCheck(getResultEvent, ...)
 	if not autoSC.enabled then return end
-	if p4 ~= LocalPlayer.Character then return end
+	local args = {...}
+	if args[#args] ~= LocalPlayer.Character then return end
 	local re = getResultEvent()
 	if not re then return end
-	startWatching(re, p1, p2, p3)
+	local passArgs = {}
+	for i = 1, #args - 1 do passArgs[i] = args[i] end
+	startWatching(re, passArgs)
 end
 
 ---------------------------------------------------------------------------
@@ -626,16 +632,16 @@ local function init(Hub, UI)
 		if genEv and genEv ~= lastGenSC then
 			if scConns.gen then pcall(scConns.gen.Disconnect, scConns.gen) end
 			lastGenSC = genEv
-			scConns.gen = genEv.OnClientEvent:Connect(function(p1, p2, p3, p4)
-				onSkillCheck(getGenSCResult, p1, p2, p3, p4)
+			scConns.gen = genEv.OnClientEvent:Connect(function(...)
+				onSkillCheck(getGenSCResult, ...)
 			end)
 		end
 		local healEv = getHealSCEvent()
 		if healEv and healEv ~= lastHealSC then
 			if scConns.heal then pcall(scConns.heal.Disconnect, scConns.heal) end
 			lastHealSC = healEv
-			scConns.heal = healEv.OnClientEvent:Connect(function(p1, p2, p3, p4)
-				onSkillCheck(getHealSCResult, p1, p2, p3, p4)
+			scConns.heal = healEv.OnClientEvent:Connect(function(...)
+				onSkillCheck(getHealSCResult, ...)
 			end)
 		end
 	end
