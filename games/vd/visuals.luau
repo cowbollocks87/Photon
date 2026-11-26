@@ -1876,6 +1876,80 @@ local function init(Hub, UI)
 		end
 	end)
 
+	local genHandle = track("generator esp", genTrack, function(sub)
+		local hColor = sub:Choice("color", COLOR_NAMES, genTrack.color, function(c)
+			genTrack.color = c
+			refreshGeneratorHighlights()
+		end)
+
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, genTrack.depthMode, function(v)
+			genTrack.depthMode = v
+			refreshGeneratorHighlights()
+		end)
+
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - genTrack.fillTransparency, function(v)
+			genTrack.fillTransparency = 1 - v
+			refreshGeneratorHighlights()
+		end, { Step = 0.1 })
+
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - genTrack.outlineTransparency, function(v)
+			genTrack.outlineTransparency = 1 - v
+			refreshGeneratorHighlights()
+		end, { Step = 0.1 })
+
+		local hText = sub:Toggle("text overlay", genTrack.textOverlay, function(on)
+			genTrack.textOverlay = on
+		end)
+
+		local hName = sub:Toggle("show name", genTrack.showName, function(on)
+			genTrack.showName = on
+		end)
+
+		local hDist = sub:Toggle("show distance", genTrack.showDistance, function(on)
+			genTrack.showDistance = on
+		end)
+
+		local hKick = sub:Toggle("show kick count", genTrack.showKickCount, function(on)
+			genTrack.showKickCount = on
+		end)
+
+		local hRepairing = sub:Toggle("show players repairing", genTrack.showPlayersRepairing, function(on)
+			genTrack.showPlayersRepairing = on
+		end)
+
+		local hPaused = sub:Toggle("show paused progress", genTrack.showPausedProgress, function(on)
+			genTrack.showPausedProgress = on
+		end)
+
+		local hProgress = sub:Toggle("show repair progress", genTrack.showRepairProgress, function(on)
+			genTrack.showRepairProgress = on
+		end)
+
+		local hRate = sub:Toggle("show rate", genTrack.showRate, function(on)
+			genTrack.showRate = on
+		end)
+
+		local hEta = sub:Toggle("show eta", genTrack.showEta, function(on)
+			genTrack.showEta = on
+		end)
+
+		return function()
+			hColor:Set(genTrack.color)
+			hDepth:Set(genTrack.depthMode)
+			hFill:Set(1 - genTrack.fillTransparency)
+			hOutline:Set(1 - genTrack.outlineTransparency)
+			hText:Set(genTrack.textOverlay)
+			hName:Set(genTrack.showName)
+			hDist:Set(genTrack.showDistance)
+			hKick:Set(genTrack.showKickCount)
+			hRepairing:Set(genTrack.showPlayersRepairing)
+			hPaused:Set(genTrack.showPausedProgress)
+			hProgress:Set(genTrack.showRepairProgress)
+			hRate:Set(genTrack.showRate)
+			hEta:Set(genTrack.showEta)
+		end
+	end)
+
 	local palletHandle = track("pallet esp", palletTrack, function(sub)
 		local hColor = sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
 			palletTrack.color = c
@@ -2064,80 +2138,6 @@ local function init(Hub, UI)
 			hText:Set(trapTrack.textOverlay)
 			hName:Set(trapTrack.showName)
 			hDist:Set(trapTrack.showDistance)
-		end
-	end)
-
-	local genHandle = track("generator esp", genTrack, function(sub)
-		local hColor = sub:Choice("color", COLOR_NAMES, genTrack.color, function(c)
-			genTrack.color = c
-			refreshGeneratorHighlights()
-		end)
-
-		local hDepth = sub:Choice("depth mode", DEPTH_MODES, genTrack.depthMode, function(v)
-			genTrack.depthMode = v
-			refreshGeneratorHighlights()
-		end)
-
-		local hFill = sub:Slider("fill opacity", 0, 1, 1 - genTrack.fillTransparency, function(v)
-			genTrack.fillTransparency = 1 - v
-			refreshGeneratorHighlights()
-		end, { Step = 0.1 })
-
-		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - genTrack.outlineTransparency, function(v)
-			genTrack.outlineTransparency = 1 - v
-			refreshGeneratorHighlights()
-		end, { Step = 0.1 })
-
-		local hText = sub:Toggle("text overlay", genTrack.textOverlay, function(on)
-			genTrack.textOverlay = on
-		end)
-
-		local hName = sub:Toggle("show name", genTrack.showName, function(on)
-			genTrack.showName = on
-		end)
-
-		local hDist = sub:Toggle("show distance", genTrack.showDistance, function(on)
-			genTrack.showDistance = on
-		end)
-
-		local hKick = sub:Toggle("show kick count", genTrack.showKickCount, function(on)
-			genTrack.showKickCount = on
-		end)
-
-		local hRepairing = sub:Toggle("show players repairing", genTrack.showPlayersRepairing, function(on)
-			genTrack.showPlayersRepairing = on
-		end)
-
-		local hPaused = sub:Toggle("show paused progress", genTrack.showPausedProgress, function(on)
-			genTrack.showPausedProgress = on
-		end)
-
-		local hProgress = sub:Toggle("show repair progress", genTrack.showRepairProgress, function(on)
-			genTrack.showRepairProgress = on
-		end)
-
-		local hRate = sub:Toggle("show rate", genTrack.showRate, function(on)
-			genTrack.showRate = on
-		end)
-
-		local hEta = sub:Toggle("show eta", genTrack.showEta, function(on)
-			genTrack.showEta = on
-		end)
-
-		return function()
-			hColor:Set(genTrack.color)
-			hDepth:Set(genTrack.depthMode)
-			hFill:Set(1 - genTrack.fillTransparency)
-			hOutline:Set(1 - genTrack.outlineTransparency)
-			hText:Set(genTrack.textOverlay)
-			hName:Set(genTrack.showName)
-			hDist:Set(genTrack.showDistance)
-			hKick:Set(genTrack.showKickCount)
-			hRepairing:Set(genTrack.showPlayersRepairing)
-			hPaused:Set(genTrack.showPausedProgress)
-			hProgress:Set(genTrack.showRepairProgress)
-			hRate:Set(genTrack.showRate)
-			hEta:Set(genTrack.showEta)
 		end
 	end)
 
