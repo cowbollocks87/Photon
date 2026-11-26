@@ -803,7 +803,7 @@ local function init(Hub, UI)
 		modeUI.kv:Set(modes[modeIdx])
 	end)
 
-	tab:Slider("rate", 0, 100, autoSC.rate, function(v)
+	local rateSlider = tab:Slider("rate", 0, 100, autoSC.rate, function(v)
 		autoSC.rate = v
 	end, { Step = 5, Suffix = "%" })
 
@@ -813,7 +813,7 @@ local function init(Hub, UI)
 		autoSC.ksEnabled = on
 	end)
 
-	tab:Slider("king's scourge rate", 0, 100, autoSC.ksRate, function(v)
+	local ksRateSlider = tab:Slider("king's scourge rate", 0, 100, autoSC.ksRate, function(v)
 		autoSC.ksRate = v
 	end, { Step = 5, Suffix = "%" })
 
@@ -868,11 +868,11 @@ local function init(Hub, UI)
 		end
 	end, "autoParry")
 
-	tab:Slider("radius", 8, 24, autoParry.radius, function(v)
+	local radiusSlider = tab:Slider("radius", 8, 24, autoParry.radius, function(v)
 		autoParry.radius = v
 	end, { Step = 1, Suffix = " studs" })
 
-	tab:Slider("delay", 0, 300, autoParry.delay, function(v)
+	local delaySlider = tab:Slider("delay", 0, 300, autoParry.delay, function(v)
 		autoParry.delay = v
 	end, { Step = 10, Suffix = " ms" })
 
@@ -889,7 +889,7 @@ local function init(Hub, UI)
 		autoParry.faceCheck = on
 	end, "faceCheck")
 
-	tab:Slider("facing cone", 30, 120, autoParry.faceCone, function(v)
+	local faceConeSlider = tab:Slider("facing cone", 30, 120, autoParry.faceCone, function(v)
 		autoParry.faceCone = v
 	end, { Step = 10, Suffix = "\194\176" })
 
@@ -941,9 +941,16 @@ local function init(Hub, UI)
 	Hub:OnConfigLoad(function()
 		scToggle:Set(autoSC.enabled)
 		ksToggle:Set(autoSC.ksEnabled)
+		rateSlider:Set(autoSC.rate)
+		ksRateSlider:Set(autoSC.ksRate)
+		local mi = table.find(modes, autoSC.mode)
+		if mi then modeIdx = mi; modeUI.kv:Set(modes[modeIdx]) end
 		parryToggle:Set(autoParry.enabled)
+		radiusSlider:Set(autoParry.radius)
+		delaySlider:Set(autoParry.delay)
 		radiusToggle:Set(autoParry.showRadius)
 		faceToggle:Set(autoParry.faceCheck)
+		faceConeSlider:Set(autoParry.faceCone)
 		hmToggle:Set(autoParry.ignoreHiddenMark)
 		dsToggle:Set(autoParry.ignoreDarkSeverance)
 		frenzyToggle:Set(autoParry.ignoreFrenzy)

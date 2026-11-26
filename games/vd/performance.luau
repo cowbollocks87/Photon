@@ -29,7 +29,7 @@ local function init(Hub, UI)
 	----------------------------------------------------------------
 	tab:Section("lighting")
 
-	tab:Toggle("remove global shadows", false, function(on)
+	local shadowToggle = tab:Toggle("remove global shadows", false, function(on)
 		perfState.noShadows = on
 		if on then
 			savedShadows = Lighting.GlobalShadows
@@ -59,7 +59,7 @@ local function init(Hub, UI)
 		Lighting.OutdoorAmbient = savedOutdoorAmbient
 	end
 
-	tab:Toggle("fullbright", false, function(on)
+	local fullbrightToggle = tab:Toggle("fullbright", false, function(on)
 		perfState.fullbright = on
 		if on then
 			applyFullbright()
@@ -91,7 +91,7 @@ local function init(Hub, UI)
 
 	local fpsSlider
 
-	tab:Toggle("custom frame rate cap", false, function(on)
+	local fpsCapToggle = tab:Toggle("custom frame rate cap", false, function(on)
 		perfState.fpsCapEnabled = on
 		if on then
 			if setfpscap then
@@ -116,15 +116,15 @@ local function init(Hub, UI)
 	----------------------------------------------------------------
 	tab:Section("esp range")
 
-	tab:Toggle("highlight range limit", false, function(on)
+	local rangeToggle = tab:Toggle("highlight range limit", false, function(on)
 		perfState.espRange = on
 	end)
 
-	tab:Slider("max range", 10, 500, perfState.espRangeMax, function(v)
+	local rangeSlider = tab:Slider("max range", 10, 500, perfState.espRangeMax, function(v)
 		perfState.espRangeMax = v
 	end, { Step = 10, Suffix = " studs" })
 
-	tab:Toggle("distance based opacity", false, function(on)
+	local distOpacityToggle = tab:Toggle("distance based opacity", false, function(on)
 		perfState.espDistOpacity = on
 	end)
 
@@ -143,6 +143,16 @@ local function init(Hub, UI)
 		if perfState.fpsCapEnabled and setfpscap then
 			setfpscap(perfState.fpsCap)
 		end
+	end)
+
+	Hub:OnConfigLoad(function()
+		shadowToggle:Set(perfState.noShadows)
+		fullbrightToggle:Set(perfState.fullbright)
+		fpsCapToggle:Set(perfState.fpsCapEnabled)
+		fpsSlider:Set(perfState.fpsCap)
+		rangeToggle:Set(perfState.espRange)
+		rangeSlider:Set(perfState.espRangeMax)
+		distOpacityToggle:Set(perfState.espDistOpacity)
 	end)
 
 	Hub:RegisterCleanup(function()

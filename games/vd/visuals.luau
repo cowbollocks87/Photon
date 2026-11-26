@@ -1296,7 +1296,13 @@ local function init(Hub, UI)
 				val.Text = tostring(options[index])
 				if callback then pcall(callback, options[index]) end
 			end)
-			return { Get = function() return options[index] end }
+			return {
+				Get = function() return options[index] end,
+				Set = function(_, v)
+					local i = table.find(options, v)
+					if i then index = i; val.Text = tostring(options[index]) end
+				end,
+			}
 		end
 
 		function sub:Slider(label, min, max, default, callback, opts)
@@ -1442,7 +1448,13 @@ local function init(Hub, UI)
 					ival.Text = tostring(options[index])
 					if callback then pcall(callback, options[index]) end
 				end)
-				return { Get = function() return options[index] end }
+				return {
+					Get = function() return options[index] end,
+					Set = function(_, v)
+						local i = table.find(options, v)
+						if i then index = i; ival.Text = tostring(options[index]) end
+					end,
+				}
 			end
 
 			local sExpanded = false
@@ -1460,8 +1472,11 @@ local function init(Hub, UI)
 				end
 			end)
 
-			buildInner(inner)
-			return tState
+			local innerSync = buildInner(inner)
+			return { state = tState, sync = function()
+				sRenderToggle()
+				if type(innerSync) == "function" then innerSync() end
+			end }
 		end
 
 		local expanded = false
@@ -1489,46 +1504,61 @@ local function init(Hub, UI)
 			end
 		end)
 
-		buildContent(sub)
-		return { state = state, sync = renderToggle }
+		local subSync = buildContent(sub)
+		return { state = state, sync = function()
+			renderToggle()
+			if type(subSync) == "function" then subSync() end
+		end }
 	end
 
 	-- team ESP
 	local teamHandle = track("team esp", teamESP, function(sub)
-		sub:Choice("spectator", COLOR_NAMES, teamESP.colors.Spectator, function(c)
+		local hSpec = sub:Choice("spectator", COLOR_NAMES, teamESP.colors.Spectator, function(c)
 			teamESP.colors.Spectator = c
 			refreshPlayerHighlights()
 		end)
-		sub:Choice("survivors", COLOR_NAMES, teamESP.colors.Survivors, function(c)
+		local hSurv = sub:Choice("survivors", COLOR_NAMES, teamESP.colors.Survivors, function(c)
 			teamESP.colors.Survivors = c
 			refreshPlayerHighlights()
 			refreshBotHighlights()
 		end)
-		sub:Choice("killer", COLOR_NAMES, teamESP.colors.Killer, function(c)
+		local hKill = sub:Choice("killer", COLOR_NAMES, teamESP.colors.Killer, function(c)
 			teamESP.colors.Killer = c
 			refreshPlayerHighlights()
 		end)
 
-		sub:Track("health state esp", teamESP.survivorHealth, function(inner)
-			inner:Choice("healthy", COLOR_NAMES, teamESP.survivorHealth.healthy, function(c)
+		local healthTrack = sub:Track("health state esp", teamESP.survivorHealth, function(inner)
+			local hHealthy = inner:Choice("healthy", COLOR_NAMES, teamESP.survivorHealth.healthy, function(c)
 				teamESP.survivorHealth.healthy = c
 				refreshPlayerHighlights()
 				refreshBotHighlights()
 			end)
-			inner:Choice("injured", COLOR_NAMES, teamESP.survivorHealth.injured, function(c)
+			local hInjured = inner:Choice("injured", COLOR_NAMES, teamESP.survivorHealth.injured, function(c)
 				teamESP.survivorHealth.injured = c
 				refreshPlayerHighlights()
 				refreshBotHighlights()
 			end)
-			inner:Choice("downed", COLOR_NAMES, teamESP.survivorHealth.downed, function(c)
+			local hDowned = inner:Choice("downed", COLOR_NAMES, teamESP.survivorHealth.downed, function(c)
 				teamESP.survivorHealth.downed = c
 				refreshPlayerHighlights()
 				refreshBotHighlights()
 			end)
+			return function()
+				hHealthy:Set(teamESP.survivorHealth.healthy)
+				hInjured:Set(teamESP.survivorHealth.injured)
+				hDowned:Set(teamESP.survivorHealth.downed)
+			end
 		end, function()
 			refreshPlayerHighlights()
 			refreshBotHighlights()
 		end)
+
+		return function()
+			hSpec:Set(teamESP.colors.Spectator)
+			hSurv:Set(teamESP.colors.Survivors)
+			hKill:Set(teamESP.colors.Killer)
+			healthTrack.sync()
+		end
 	end, function()
 		refreshPlayerHighlights()
 		refreshBotHighlights()
@@ -1538,245 +1568,316 @@ local function init(Hub, UI)
 	tab:Section("tracks")
 
 	local playerHandle = track("player esp", playerTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, playerTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, playerTrack.color, function(c)
 			playerTrack.color = c
 			refreshPlayerHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, playerTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, playerTrack.depthMode, function(v)
 			playerTrack.depthMode = v
 			refreshPlayerHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - playerTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - playerTrack.fillTransparency, function(v)
 			playerTrack.fillTransparency = 1 - v
 			refreshPlayerHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - playerTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - playerTrack.outlineTransparency, function(v)
 			playerTrack.outlineTransparency = 1 - v
 			refreshPlayerHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", playerTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", playerTrack.textOverlay, function(on)
 			playerTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", playerTrack.showName, function(on)
+		local hName = sub:Toggle("show name", playerTrack.showName, function(on)
 			playerTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", playerTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", playerTrack.showDistance, function(on)
 			playerTrack.showDistance = on
 		end)
 
-		sub:Toggle("ignore spectator", playerTrack.ignoreSpectator, function(on)
+		local hIgnore = sub:Toggle("ignore spectator", playerTrack.ignoreSpectator, function(on)
 			playerTrack.ignoreSpectator = on
 		end)
+
+		return function()
+			hColor:Set(playerTrack.color)
+			hDepth:Set(playerTrack.depthMode)
+			hFill:Set(1 - playerTrack.fillTransparency)
+			hOutline:Set(1 - playerTrack.outlineTransparency)
+			hText:Set(playerTrack.textOverlay)
+			hName:Set(playerTrack.showName)
+			hDist:Set(playerTrack.showDistance)
+			hIgnore:Set(playerTrack.ignoreSpectator)
+		end
 	end, nil, "playerESP")
 
 	local botHandle = track("bot esp", botTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, botTrack.color, function(c)
 			botTrack.color = c
 			refreshBotHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, botTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, botTrack.depthMode, function(v)
 			botTrack.depthMode = v
 			refreshBotHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - botTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - botTrack.fillTransparency, function(v)
 			botTrack.fillTransparency = 1 - v
 			refreshBotHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - botTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - botTrack.outlineTransparency, function(v)
 			botTrack.outlineTransparency = 1 - v
 			refreshBotHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", botTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", botTrack.textOverlay, function(on)
 			botTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", botTrack.showName, function(on)
+		local hName = sub:Toggle("show name", botTrack.showName, function(on)
 			botTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", botTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", botTrack.showDistance, function(on)
 			botTrack.showDistance = on
 		end)
+
+		return function()
+			hColor:Set(botTrack.color)
+			hDepth:Set(botTrack.depthMode)
+			hFill:Set(1 - botTrack.fillTransparency)
+			hOutline:Set(1 - botTrack.outlineTransparency)
+			hText:Set(botTrack.textOverlay)
+			hName:Set(botTrack.showName)
+			hDist:Set(botTrack.showDistance)
+		end
 	end)
 
 	local selfHandle = track("self esp", selfTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, selfTrack.color, function(c)
 			selfTrack.color = c
 			refreshSelfHighlight()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, selfTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, selfTrack.depthMode, function(v)
 			selfTrack.depthMode = v
 			refreshSelfHighlight()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - selfTrack.fillTransparency, function(v)
 			selfTrack.fillTransparency = 1 - v
 			refreshSelfHighlight()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - selfTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - selfTrack.outlineTransparency, function(v)
 			selfTrack.outlineTransparency = 1 - v
 			refreshSelfHighlight()
 		end, { Step = 0.1 })
+
+		return function()
+			hColor:Set(selfTrack.color)
+			hDepth:Set(selfTrack.depthMode)
+			hFill:Set(1 - selfTrack.fillTransparency)
+			hOutline:Set(1 - selfTrack.outlineTransparency)
+		end
 	end)
 
 	local palletHandle = track("pallet esp", palletTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, palletTrack.color, function(c)
 			palletTrack.color = c
 			refreshPalletHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, palletTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, palletTrack.depthMode, function(v)
 			palletTrack.depthMode = v
 			refreshPalletHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - palletTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - palletTrack.fillTransparency, function(v)
 			palletTrack.fillTransparency = 1 - v
 			refreshPalletHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - palletTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - palletTrack.outlineTransparency, function(v)
 			palletTrack.outlineTransparency = 1 - v
 			refreshPalletHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", palletTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", palletTrack.textOverlay, function(on)
 			palletTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", palletTrack.showName, function(on)
+		local hName = sub:Toggle("show name", palletTrack.showName, function(on)
 			palletTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", palletTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", palletTrack.showDistance, function(on)
 			palletTrack.showDistance = on
 		end)
+
+		return function()
+			hColor:Set(palletTrack.color)
+			hDepth:Set(palletTrack.depthMode)
+			hFill:Set(1 - palletTrack.fillTransparency)
+			hOutline:Set(1 - palletTrack.outlineTransparency)
+			hText:Set(palletTrack.textOverlay)
+			hName:Set(palletTrack.showName)
+			hDist:Set(palletTrack.showDistance)
+		end
 	end)
 
 	local windowHandle = track("window esp", windowTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, windowTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, windowTrack.color, function(c)
 			windowTrack.color = c
 			refreshWindowHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, windowTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, windowTrack.depthMode, function(v)
 			windowTrack.depthMode = v
 			refreshWindowHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - windowTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - windowTrack.fillTransparency, function(v)
 			windowTrack.fillTransparency = 1 - v
 			refreshWindowHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - windowTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - windowTrack.outlineTransparency, function(v)
 			windowTrack.outlineTransparency = 1 - v
 			refreshWindowHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", windowTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", windowTrack.textOverlay, function(on)
 			windowTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", windowTrack.showName, function(on)
+		local hName = sub:Toggle("show name", windowTrack.showName, function(on)
 			windowTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", windowTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", windowTrack.showDistance, function(on)
 			windowTrack.showDistance = on
 		end)
 
-		sub:Toggle("show blocked timer", windowTrack.showBlockedTimer, function(on)
+		local hBlocked = sub:Toggle("show blocked timer", windowTrack.showBlockedTimer, function(on)
 			windowTrack.showBlockedTimer = on
 		end)
+
+		return function()
+			hColor:Set(windowTrack.color)
+			hDepth:Set(windowTrack.depthMode)
+			hFill:Set(1 - windowTrack.fillTransparency)
+			hOutline:Set(1 - windowTrack.outlineTransparency)
+			hText:Set(windowTrack.textOverlay)
+			hName:Set(windowTrack.showName)
+			hDist:Set(windowTrack.showDistance)
+			hBlocked:Set(windowTrack.showBlockedTimer)
+		end
 	end)
 
 	local zombieHandle = track("scp 049-2 esp", zombieTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, zombieTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, zombieTrack.color, function(c)
 			zombieTrack.color = c
 			refreshZombieHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, zombieTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, zombieTrack.depthMode, function(v)
 			zombieTrack.depthMode = v
 			refreshZombieHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - zombieTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - zombieTrack.fillTransparency, function(v)
 			zombieTrack.fillTransparency = 1 - v
 			refreshZombieHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - zombieTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - zombieTrack.outlineTransparency, function(v)
 			zombieTrack.outlineTransparency = 1 - v
 			refreshZombieHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", zombieTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", zombieTrack.textOverlay, function(on)
 			zombieTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", zombieTrack.showName, function(on)
+		local hName = sub:Toggle("show name", zombieTrack.showName, function(on)
 			zombieTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", zombieTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", zombieTrack.showDistance, function(on)
 			zombieTrack.showDistance = on
 		end)
 
-		sub:Toggle("ignore inactive", zombieTrack.ignoreInactive, function(on)
+		local hInactive = sub:Toggle("ignore inactive", zombieTrack.ignoreInactive, function(on)
 			zombieTrack.ignoreInactive = on
 		end)
 
-		sub:Toggle("ignore dead", zombieTrack.ignoreDead, function(on)
+		local hDead = sub:Toggle("ignore dead", zombieTrack.ignoreDead, function(on)
 			zombieTrack.ignoreDead = on
 		end)
+
+		return function()
+			hColor:Set(zombieTrack.color)
+			hDepth:Set(zombieTrack.depthMode)
+			hFill:Set(1 - zombieTrack.fillTransparency)
+			hOutline:Set(1 - zombieTrack.outlineTransparency)
+			hText:Set(zombieTrack.textOverlay)
+			hName:Set(zombieTrack.showName)
+			hDist:Set(zombieTrack.showDistance)
+			hInactive:Set(zombieTrack.ignoreInactive)
+			hDead:Set(zombieTrack.ignoreDead)
+		end
 	end)
 
 	local trapHandle = track("bear trap esp", trapTrack, function(sub)
-		sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
+		local hColor = sub:Choice("color", COLOR_NAMES, trapTrack.color, function(c)
 			trapTrack.color = c
 			refreshTrapHighlights()
 		end)
 
-		sub:Choice("depth mode", DEPTH_MODES, trapTrack.depthMode, function(v)
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, trapTrack.depthMode, function(v)
 			trapTrack.depthMode = v
 			refreshTrapHighlights()
 		end)
 
-		sub:Slider("fill opacity", 0, 1, 1 - trapTrack.fillTransparency, function(v)
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - trapTrack.fillTransparency, function(v)
 			trapTrack.fillTransparency = 1 - v
 			refreshTrapHighlights()
 		end, { Step = 0.1 })
 
-		sub:Slider("outline opacity", 0, 1, 1 - trapTrack.outlineTransparency, function(v)
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - trapTrack.outlineTransparency, function(v)
 			trapTrack.outlineTransparency = 1 - v
 			refreshTrapHighlights()
 		end, { Step = 0.1 })
 
-		sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
+		local hText = sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
 			trapTrack.textOverlay = on
 		end)
 
-		sub:Toggle("show name", trapTrack.showName, function(on)
+		local hName = sub:Toggle("show name", trapTrack.showName, function(on)
 			trapTrack.showName = on
 		end)
 
-		sub:Toggle("show distance", trapTrack.showDistance, function(on)
+		local hDist = sub:Toggle("show distance", trapTrack.showDistance, function(on)
 			trapTrack.showDistance = on
 		end)
+
+		return function()
+			hColor:Set(trapTrack.color)
+			hDepth:Set(trapTrack.depthMode)
+			hFill:Set(1 - trapTrack.fillTransparency)
+			hOutline:Set(1 - trapTrack.outlineTransparency)
+			hText:Set(trapTrack.textOverlay)
+			hName:Set(trapTrack.showName)
+			hDist:Set(trapTrack.showDistance)
+		end
 	end)
 
 	-- connect players

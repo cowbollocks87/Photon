@@ -160,20 +160,20 @@ local function init(Hub, UI)
 	tab:Section("appearance")
 
 	local accentList = Hub.AccentList or {"white"}
-	tab:Choice("accent color", accentList, Hub._appearance.accent or "white", function(name)
+	local accentChoice = tab:Choice("accent color", accentList, Hub._appearance.accent or "white", function(name)
 		Hub:SetAccent(name)
 	end)
 
 	local toastPositions = Hub.ToastPositions or {"top-center"}
-	tab:Choice("notification position", toastPositions, Hub._appearance.toastPos or "top-center", function(pos)
+	local toastPosChoice = tab:Choice("notification position", toastPositions, Hub._appearance.toastPos or "top-center", function(pos)
 		Hub:SetToastPosition(pos)
 	end)
 
-	tab:Slider("notification x offset", -300, 300, Hub._appearance.toastOffsetX or 0, function(v)
+	local toastXSlider = tab:Slider("notification x offset", -300, 300, Hub._appearance.toastOffsetX or 0, function(v)
 		Hub:SetToastOffset(v, nil)
 	end, { Step = 10, Suffix = " px" })
 
-	tab:Slider("notification y offset", -300, 300, Hub._appearance.toastOffsetY or 0, function(v)
+	local toastYSlider = tab:Slider("notification y offset", -300, 300, Hub._appearance.toastOffsetY or 0, function(v)
 		Hub:SetToastOffset(nil, v)
 	end, { Step = 10, Suffix = " px" })
 
@@ -211,6 +211,14 @@ local function init(Hub, UI)
 		Hub:ClearAllKeybinds()
 		Hub:Log("all keybinds cleared")
 		Hub:Notify("keybinds", "all cleared", 2)
+	end)
+
+	Hub:OnConfigLoad(function()
+		accentChoice:Set(Hub._appearance.accent)
+		toastPosChoice:Set(Hub._appearance.toastPos)
+		toastXSlider:Set(Hub._appearance.toastOffsetX or 0)
+		toastYSlider:Set(Hub._appearance.toastOffsetY or 0)
+		menuKV:Set(string.lower(Hub.Keybind.Name))
 	end)
 
 	----------------------------------------------------------------
