@@ -722,9 +722,31 @@ local function connectAnimator(animator, char)
 	end))
 end
 
+local preloaded = false
+local function preloadAnims()
+	if preloaded then return end
+	preloaded = true
+	local assets = {}
+	for id in pairs(M1_ANIMS) do
+		table.insert(assets, Instance.new("Animation", nil))
+		assets[#assets].AnimationId = id
+	end
+	for id in pairs(SPECIAL_ANIMS) do
+		table.insert(assets, Instance.new("Animation", nil))
+		assets[#assets].AnimationId = id
+	end
+	task.spawn(function()
+		pcall(function()
+			game:GetService("ContentProvider"):PreloadAsync(assets)
+		end)
+		for _, a in ipairs(assets) do pcall(a.Destroy, a) end
+	end)
+end
+
 local function setupParryWatcher()
 	teardownParryWatcher()
 	if not autoParry.enabled then return end
+	preloadAnims()
 
 	local killer = findKiller()
 	if not killer then return end
