@@ -391,18 +391,7 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 			or tryGetConnections(fakeInput)
 			or tryFiresignal(fakeInput)
 
-		if inputSent then
-			local st = ksState
-			task.delay(0.2, function()
-				local c2 = getCheck()
-				if c2 and c2.Visible and autoSC.enabled and st then
-					local char = LocalPlayer.Character
-					if char then
-						st.ksHit:FireServer(st.genPart, "success", st.guid, char)
-					end
-				end
-			end)
-		else
+		if not inputSent then
 			local char = LocalPlayer.Character
 			if char and ksState then
 				ksState.ksHit:FireServer(ksState.genPart, "success", ksState.guid, char)
