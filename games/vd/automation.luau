@@ -348,7 +348,7 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 
 	local targetRot = nil
 	local fired = false
-	local prevLineRot = 0
+	local lastGoalRot = nil
 
 	ksRenderConn = RunService.RenderStepped:Connect(function()
 		if not autoSC.enabled or not ksState then
@@ -360,28 +360,27 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 		if not check or not check.Visible then
 			targetRot = nil
 			fired = false
-			prevLineRot = 0
+			lastGoalRot = nil
 			return
 		end
 
 		local line = getLine()
 		if not line then return end
 
-		local curRot = line.Rotation
+		local goal = getGoal()
+		local gr = goal and goal.Rotation or 0
 
-		if fired and curRot < prevLineRot - 20 then
+		if lastGoalRot ~= nil and math.abs(gr - lastGoalRot) > 1 then
 			pcall(keyrelease, scKey.Value)
 			targetRot = nil
 			fired = false
 		end
 
-		prevLineRot = curRot
+		lastGoalRot = gr
 
 		if fired then return end
 
 		if not targetRot then
-			local goal = getGoal()
-			local gr = goal and goal.Rotation or 0
 			local roll = math.random(1, 100)
 			if roll > ksState.rate then
 				fired = true
@@ -390,10 +389,9 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 			targetRot = gr + 104 + bellRand() * 8
 		end
 
-		if curRot < targetRot then return end
+		if line.Rotation < targetRot then return end
 
 		fired = true
-		prevLineRot = curRot
 
 		pcall(keyrelease, scKey.Value)
 		local inputSent = tryKeypress()
