@@ -113,6 +113,23 @@ local palletTrack = {
 	depthMode = "alwaysontop",
 }
 
+local genTrack = {
+	enabled = false,
+	color = "green",
+	fillTransparency = 0.7,
+	outlineTransparency = 0,
+	textOverlay = true,
+	showName = true,
+	showDistance = true,
+	showKickCount = false,
+	showPlayersRepairing = true,
+	showPausedProgress = true,
+	showRepairProgress = true,
+	showRate = true,
+	showEta = true,
+	depthMode = "alwaysontop",
+}
+
 local HubRef = nil
 
 local espData = {}
@@ -123,6 +140,7 @@ local trapEspData = {}
 local zombieEspData = {}
 local windowEspData = {}
 local palletEspData = {}
+local genEspData = {}
 local highlightFolder = nil
 
 ---------------------------------------------------------------------------
@@ -308,6 +326,25 @@ local function refreshPalletHighlights()
 	for model, data in pairs(palletEspData) do
 		if data.highlight then
 			applyPalletHighlight(data.highlight, model)
+		end
+	end
+end
+
+local function applyGeneratorHighlight(hl, paused)
+	local c = COLORS[genTrack.color] or COLORS.white
+	if paused and genTrack.showPausedProgress then c = dimColor(c) end
+	hl.OutlineColor = c
+	hl.FillColor = c
+	hl.OutlineTransparency = genTrack.outlineTransparency
+	hl.FillTransparency = genTrack.fillTransparency
+	hl.DepthMode = DEPTH_MAP[genTrack.depthMode] or Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function refreshGeneratorHighlights()
+	for model, data in pairs(genEspData) do
+		if data.highlight then
+			local paused = model:GetAttribute("ProgressPaused") == true
+			applyGeneratorHighlight(data.highlight, paused)
 		end
 	end
 end
@@ -640,6 +677,47 @@ local function createPalletESP(model)
 	palletEspData[model] = data
 end
 
+local function isGenerator(inst)
+	if not inst:IsA("Model") then return false end
+	return inst:FindFirstChild("GeneratorBody") ~= nil
+		and inst.Parent and inst.Parent.Name == "Generators"
+end
+
+local function removeGeneratorESP(model)
+	local data = genEspData[model]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
+	if data.text then pcall(data.text.Remove, data.text) end
+	genEspData[model] = nil
+end
+
+local function createGeneratorESP(model)
+	if genEspData[model] then return end
+
+	local data = {
+		highlight = nil,
+		text = Drawing.new("Text"),
+		conn = nil,
+		lastProgress = nil,
+		lastProgressTime = nil,
+		rate = 0,
+	}
+	data.text.Visible = false
+	data.text.Center = true
+	data.text.Size = 13
+	data.text.Font = 3
+	data.text.Color = Color3.new(1, 1, 1)
+	data.text.Outline = true
+	data.text.OutlineColor = Color3.new(0, 0, 0)
+
+	data.conn = model.AncestryChanged:Connect(function(_, parent)
+		if not parent then removeGeneratorESP(model) end
+	end)
+
+	genEspData[model] = data
+end
+
 ---------------------------------------------------------------------------
 -- Range / opacity helpers
 ---------------------------------------------------------------------------
@@ -687,6 +765,10 @@ local function updateESP()
 			end
 		end
 		for _, data in pairs(palletEspData) do
+			if data.highlight then data.highlight.Enabled = false end
+			if data.text then data.text.Visible = false end
+		end
+		for _, data in pairs(genEspData) do
 			if data.highlight then data.highlight.Enabled = false end
 			if data.text then data.text.Visible = false end
 		end
@@ -1078,6 +1160,107 @@ local function updateESP()
 			if data.text then data.text.Visible = false end
 		end
 	end
+
+	-- generator ESP
+	local now = os.clock()
+	for model, data in pairs(genEspData) do
+		local body = model:FindFirstChild("GeneratorBody")
+		local gPart = body or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		local gDist = gPart and (gPart.Position - refPos).Magnitude or 0
+		local gInRange = espRangeCheck(gDist, rangeEnabled, rangeMax)
+		local active = genTrack.enabled and model.Parent ~= nil and gInRange
+
+		local progress = model:GetAttribute("RepairProgress") or 0
+		local paused = model:GetAttribute("ProgressPaused") == true
+
+		if data.lastProgressTime and (now - data.lastProgressTime) >= 0.5 then
+			local dt = now - data.lastProgressTime
+			local dp = progress - (data.lastProgress or 0)
+			data.rate = dp / dt
+			data.lastProgress = progress
+			data.lastProgressTime = now
+		elseif not data.lastProgressTime then
+			data.lastProgress = progress
+			data.lastProgressTime = now
+		end
+
+		if active then
+			if not data.highlight then
+				data.highlight = Instance.new("Highlight")
+				data.highlight.Adornee = body or model
+				data.highlight.Parent = getHighlightParent()
+			end
+			applyGeneratorHighlight(data.highlight, paused)
+			data.highlight.Enabled = true
+			data.highlight.FillTransparency = espDistFill(genTrack.fillTransparency, gDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(genTrack.outlineTransparency, gDist, rangeMax, distOpacity)
+		else
+			if data.highlight then data.highlight.Enabled = false end
+		end
+
+		if active and genTrack.textOverlay then
+			if gPart then
+				local pos, onScreen = Camera:WorldToViewportPoint(gPart.Position + Vector3.new(0, 3, 0))
+				if onScreen then
+					local parts = {}
+					if genTrack.showName then table.insert(parts, "[Gen]") end
+					if genTrack.showRepairProgress then
+						table.insert(parts, string.format("%.0f%%", progress))
+						if genTrack.showRate and math.abs(data.rate) > 0.01 then
+							local sign = data.rate > 0 and "+" or ""
+							table.insert(parts, string.format("%s%.1f/s", sign, data.rate))
+						end
+						if genTrack.showEta and math.abs(data.rate) > 0.01 then
+							local remaining
+							if data.rate > 0 then
+								remaining = (100 - progress) / data.rate
+							else
+								remaining = progress / math.abs(data.rate)
+							end
+							if remaining > 0 and remaining < 9999 then
+								if remaining >= 60 then
+									table.insert(parts, string.format("ETA %dm %ds", math.floor(remaining / 60), math.floor(remaining % 60)))
+								else
+									table.insert(parts, string.format("ETA %ds", math.floor(remaining)))
+								end
+							end
+						end
+					end
+					if genTrack.showPlayersRepairing then
+						local count = model:GetAttribute("PlayersRepairingCount") or 0
+						if count > 0 then table.insert(parts, count .. " repairing") end
+					end
+					if genTrack.showKickCount then
+						local kicks = model:GetAttribute("kickcount") or 0
+						if kicks > 0 then table.insert(parts, "kicked " .. kicks) end
+					end
+					if paused and genTrack.showPausedProgress then
+						table.insert(parts, "paused")
+					end
+					if genTrack.showDistance then
+						table.insert(parts, "[" .. math.floor(gDist) .. "m]")
+					end
+					local label = table.concat(parts, " ")
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						local c = COLORS[genTrack.color] or COLORS.white
+						if paused and genTrack.showPausedProgress then c = dimColor(c) end
+						data.text.Color = c
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
+				else
+					data.text.Visible = false
+				end
+			else
+				data.text.Visible = false
+			end
+		else
+			if data.text then data.text.Visible = false end
+		end
+	end
 end
 
 local function destroyAll()
@@ -1102,6 +1285,9 @@ local function destroyAll()
 	end
 	for model in pairs(palletEspData) do
 		removePalletESP(model)
+	end
+	for model in pairs(genEspData) do
+		removeGeneratorESP(model)
 	end
 	if highlightFolder then
 		pcall(highlightFolder.Destroy, highlightFolder)
@@ -1880,6 +2066,80 @@ local function init(Hub, UI)
 		end
 	end)
 
+	local genHandle = track("generator esp", genTrack, function(sub)
+		local hColor = sub:Choice("color", COLOR_NAMES, genTrack.color, function(c)
+			genTrack.color = c
+			refreshGeneratorHighlights()
+		end)
+
+		local hDepth = sub:Choice("depth mode", DEPTH_MODES, genTrack.depthMode, function(v)
+			genTrack.depthMode = v
+			refreshGeneratorHighlights()
+		end)
+
+		local hFill = sub:Slider("fill opacity", 0, 1, 1 - genTrack.fillTransparency, function(v)
+			genTrack.fillTransparency = 1 - v
+			refreshGeneratorHighlights()
+		end, { Step = 0.1 })
+
+		local hOutline = sub:Slider("outline opacity", 0, 1, 1 - genTrack.outlineTransparency, function(v)
+			genTrack.outlineTransparency = 1 - v
+			refreshGeneratorHighlights()
+		end, { Step = 0.1 })
+
+		local hText = sub:Toggle("text overlay", genTrack.textOverlay, function(on)
+			genTrack.textOverlay = on
+		end)
+
+		local hName = sub:Toggle("show name", genTrack.showName, function(on)
+			genTrack.showName = on
+		end)
+
+		local hDist = sub:Toggle("show distance", genTrack.showDistance, function(on)
+			genTrack.showDistance = on
+		end)
+
+		local hKick = sub:Toggle("show kick count", genTrack.showKickCount, function(on)
+			genTrack.showKickCount = on
+		end)
+
+		local hRepairing = sub:Toggle("show players repairing", genTrack.showPlayersRepairing, function(on)
+			genTrack.showPlayersRepairing = on
+		end)
+
+		local hPaused = sub:Toggle("show paused progress", genTrack.showPausedProgress, function(on)
+			genTrack.showPausedProgress = on
+		end)
+
+		local hProgress = sub:Toggle("show repair progress", genTrack.showRepairProgress, function(on)
+			genTrack.showRepairProgress = on
+		end)
+
+		local hRate = sub:Toggle("show rate", genTrack.showRate, function(on)
+			genTrack.showRate = on
+		end)
+
+		local hEta = sub:Toggle("show eta", genTrack.showEta, function(on)
+			genTrack.showEta = on
+		end)
+
+		return function()
+			hColor:Set(genTrack.color)
+			hDepth:Set(genTrack.depthMode)
+			hFill:Set(1 - genTrack.fillTransparency)
+			hOutline:Set(1 - genTrack.outlineTransparency)
+			hText:Set(genTrack.textOverlay)
+			hName:Set(genTrack.showName)
+			hDist:Set(genTrack.showDistance)
+			hKick:Set(genTrack.showKickCount)
+			hRepairing:Set(genTrack.showPlayersRepairing)
+			hPaused:Set(genTrack.showPausedProgress)
+			hProgress:Set(genTrack.showRepairProgress)
+			hRate:Set(genTrack.showRate)
+			hEta:Set(genTrack.showEta)
+		end
+	end)
+
 	-- connect players
 	for _, player in ipairs(Players:GetPlayers()) do
 		createESP(player)
@@ -1906,13 +2166,15 @@ local function init(Hub, UI)
 		if isZombie(desc) then createZombieESP(desc) end
 		if isWindow(desc) then createWindowESP(desc) end
 		if isPallet(desc) then createPalletESP(desc) end
+		if isGenerator(desc) then createGeneratorESP(desc) end
 	end))
 
-	-- scan workspace for zombies, windows, pallets
+	-- scan workspace for zombies, windows, pallets, generators
 	for _, desc in ipairs(workspace:GetDescendants()) do
 		if isZombie(desc) then createZombieESP(desc) end
 		if isWindow(desc) then createWindowESP(desc) end
 		if isPallet(desc) then createPalletESP(desc) end
+		if isGenerator(desc) then createGeneratorESP(desc) end
 	end
 
 	Hub:_track(RunService.RenderStepped:Connect(updateESP))
@@ -1925,6 +2187,7 @@ local function init(Hub, UI)
 		refreshZombieHighlights()
 		refreshWindowHighlights()
 		refreshPalletHighlights()
+		refreshGeneratorHighlights()
 	end
 
 	Hub:RegisterConfig("masterESP", masterESP)
@@ -1936,6 +2199,7 @@ local function init(Hub, UI)
 	Hub:RegisterConfig("zombieTrack", zombieTrack, refreshAll)
 	Hub:RegisterConfig("windowTrack", windowTrack, refreshAll)
 	Hub:RegisterConfig("palletTrack", palletTrack, refreshAll)
+	Hub:RegisterConfig("genTrack", genTrack, refreshAll)
 	Hub:OnConfigLoad(function()
 		masterEnabled = masterESP.enabled
 		masterToggle:Set(masterESP.enabled)
@@ -1947,6 +2211,7 @@ local function init(Hub, UI)
 		zombieHandle.sync()
 		windowHandle.sync()
 		palletHandle.sync()
+		genHandle.sync()
 	end)
 	Hub:RegisterCleanup(destroyAll)
 end
