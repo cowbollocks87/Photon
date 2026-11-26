@@ -349,6 +349,7 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 	local targetRot = nil
 	local fired = false
 	local lastGoalRot = nil
+	local ksTarget = "great"
 
 	ksRenderConn = RunService.RenderStepped:Connect(function()
 		if not autoSC.enabled or not ksState then
@@ -381,12 +382,26 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 		if fired then return end
 
 		if not targetRot then
+			local mode = autoSC.mode
 			local roll = math.random(1, 100)
-			if roll > ksState.rate then
+			local target
+			if mode == "great" then
+				target = roll <= ksState.rate and "great" or "good"
+			else
+				target = roll <= ksState.rate and "good" or "skip"
+			end
+
+			if target == "skip" then
 				fired = true
 				return
 			end
-			targetRot = gr + 104 + bellRand() * 8
+
+			ksTarget = target
+			if target == "great" then
+				targetRot = gr + 104 + bellRand() * 8
+			else
+				targetRot = gr + 120 + math.random() * 30
+			end
 		end
 
 		if line.Rotation < targetRot then return end
@@ -401,7 +416,8 @@ local function onKSStart(genModel, genPart, count, guid, character, guid2)
 		if not inputSent then
 			local char = LocalPlayer.Character
 			if char and ksState then
-				ksState.ksHit:FireServer(ksState.genPart, "success", ksState.guid, char)
+				local result = ksTarget == "great" and "success" or "neutral"
+				ksState.ksHit:FireServer(ksState.genPart, result, ksState.guid, char)
 			end
 		end
 	end)
