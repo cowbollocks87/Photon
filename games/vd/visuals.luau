@@ -552,16 +552,8 @@ local function isWindow(inst)
 		and inst:FindFirstChild("VaultTrigger") ~= nil
 end
 
-local function hasSpikes(bottom)
-	local ok, result = pcall(function()
-		for _, desc in ipairs(bottom:GetDescendants()) do
-			if string.sub(desc.Name, 1, 5) == "Spike" then
-				return true
-			end
-		end
-		return false
-	end)
-	return ok and result or false
+local function isBlocked(bottom)
+	return bottom:FindFirstChild("Barrier") ~= nil
 end
 
 local function removeWindowESP(model)
@@ -967,7 +959,7 @@ local function updateESP()
 		local wInRange = espRangeCheck(wDist, rangeEnabled, rangeMax)
 		local active = windowTrack.enabled and model.Parent ~= nil and wInRange
 
-		local spiked = bottom and hasSpikes(bottom) or false
+		local spiked = bottom and isBlocked(bottom) or false
 		if spiked and not data.blockedSince then
 			data.blockedSince = tick()
 		elseif not spiked and data.blockedSince then
