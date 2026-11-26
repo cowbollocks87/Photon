@@ -1168,7 +1168,8 @@ local function updateESP()
 		local gPart = body or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
 		local gDist = gPart and (gPart.Position - refPos).Magnitude or 0
 		local gInRange = espRangeCheck(gDist, rangeEnabled, rangeMax)
-		local active = genTrack.enabled and model.Parent ~= nil and gInRange
+		local completed = model:GetAttribute("Completed") == true or (model:GetAttribute("RepairProgress") or 0) >= 100
+		local active = genTrack.enabled and model.Parent ~= nil and gInRange and not completed
 
 		local progress = model:GetAttribute("RepairProgress") or 0
 		local paused = model:GetAttribute("ProgressPaused") == true
