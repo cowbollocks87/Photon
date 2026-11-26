@@ -130,7 +130,7 @@ local Home = customRequire(root._children.shared._children.home)
 local Hub = UI.new({
 	Title = "photon",
 	Version = VERSION,
-	Keybind = Enum.KeyCode.RightShift,
+	Keybind = Enum.KeyCode.K,
 })
 
 Home.build(Hub, { name = gameInfo.name })

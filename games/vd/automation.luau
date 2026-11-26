@@ -294,21 +294,28 @@ local function startWatching(resultEvent, passArgs, ksMode)
 	end)
 end
 
-local function onSkillCheck(getResultEvent, isGen, ...)
+local function onGenSkillCheck(p1, p2, p3, p4)
 	if not autoSC.enabled then return end
-	local args = {...}
-	if args[#args] ~= LocalPlayer.Character then return end
-	local passArgs = {}
-	for i = 1, #args - 1 do passArgs[i] = args[i] end
+	if p4 ~= LocalPlayer.Character then return end
+	local passArgs = {p1, p2, p3}
 
-	local ksHit = isGen and getKSHitRemote()
+	local ksHit = getKSHitRemote()
 	if ksHit then
 		startWatching(ksHit, passArgs, true)
 	else
-		local re = getResultEvent()
+		local re = getGenSCResult()
 		if not re then return end
 		startWatching(re, passArgs, false)
 	end
+end
+
+local function onHealSkillCheck(p1, p2, p3)
+	if not autoSC.enabled then return end
+	if p3 ~= LocalPlayer.Character then return end
+
+	local re = getHealSCResult()
+	if not re then return end
+	startWatching(re, {p1, p2}, false)
 end
 
 ---------------------------------------------------------------------------
@@ -670,17 +677,13 @@ local function init(Hub, UI)
 		if genEv and genEv ~= lastGenSC then
 			if scConns.gen then pcall(scConns.gen.Disconnect, scConns.gen) end
 			lastGenSC = genEv
-			scConns.gen = genEv.OnClientEvent:Connect(function(...)
-				onSkillCheck(getGenSCResult, true, ...)
-			end)
+			scConns.gen = genEv.OnClientEvent:Connect(onGenSkillCheck)
 		end
 		local healEv = getHealSCEvent()
 		if healEv and healEv ~= lastHealSC then
 			if scConns.heal then pcall(scConns.heal.Disconnect, scConns.heal) end
 			lastHealSC = healEv
-			scConns.heal = healEv.OnClientEvent:Connect(function(...)
-				onSkillCheck(getHealSCResult, false, ...)
-			end)
+			scConns.heal = healEv.OnClientEvent:Connect(onHealSkillCheck)
 		end
 	end
 

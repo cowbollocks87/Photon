@@ -189,7 +189,8 @@ function UI.new(opts)
 	local self = setmetatable({}, UI)
 	self.Title = opts.Title or "hub"
 	self.Version = opts.Version or "1.0.0"
-	self.Keybind = opts.Keybind or Enum.KeyCode.RightShift
+	self.Keybind = opts.Keybind or Enum.KeyCode.K
+	self._defaultKeybind = self.Keybind
 	self.User = string.lower(LocalPlayer.Name)
 	self.Tabs, self.Connections, self.Consoles, self.History = {}, {}, {}, {}
 	self._configRegistry, self._cleanups, self._configSyncs = {}, {}, {}
@@ -300,9 +301,13 @@ function UI.new(opts)
 				if renderFn then renderFn() end
 				return
 			end
-			if input.KeyCode == self.Keybind then return end
+			if id ~= "_menuKey" and input.KeyCode == self.Keybind then return end
 			self._keybindListening = nil
-			self:SetKeybind(id, input.KeyCode)
+			if id == "_menuKey" then
+				self:SetMenuKeybind(input.KeyCode)
+			else
+				self:SetKeybind(id, input.KeyCode)
+			end
 			return
 		end
 		if processed then return end
@@ -454,6 +459,13 @@ end
 function UI:StartListening(id)
 	self._keybindListening = id
 	local renderFn = self._keybindRenders and self._keybindRenders[id]
+	if renderFn then renderFn() end
+end
+
+function UI:SetMenuKeybind(keyCode)
+	self.Keybind = keyCode
+	self._appearance.menuKey = keyCode.Name
+	local renderFn = self._keybindRenders and self._keybindRenders["_menuKey"]
 	if renderFn then renderFn() end
 end
 
@@ -747,7 +759,7 @@ function Tab:Label(text)
 	return {Set = function(_, t) l.Text = t end}
 end
 
-function Tab:KeyValue(key, value, callback)
+function Tab:KeyValue(key, value, callback, rightCallback)
 	local row = self:_row(22)
 	if callback then
 		local hit = self:_hit(row)
@@ -755,6 +767,9 @@ function Tab:KeyValue(key, value, callback)
 		local v = Text(hit, tostring(value), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 0), Size = UDim2.new(0.5, -8, 1, 0),
 			TextSize = 11, TextColor3 = T.text, TextXAlignment = RIGHT})
 		hit.MouseButton1Click:Connect(function() self:_safe(key, callback) end)
+		if rightCallback then
+			hit.MouseButton2Click:Connect(function() self:_safe(key, rightCallback) end)
+		end
 		return {Set = function(_, val) v.Text = tostring(val) end, Remove = function() row:Destroy() end}
 	end
 	Text(row, key, {Position = U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})

@@ -180,12 +180,32 @@ local function init(Hub, UI)
 	Hub:RegisterConfig("appearance", Hub._appearance, function()
 		Hub:SetAccent(Hub._appearance.accent)
 		Hub:SetToastPosition(Hub._appearance.toastPos)
+		if Hub._appearance.menuKey then
+			local ok, kc = pcall(function()
+				return Enum.KeyCode[Hub._appearance.menuKey]
+			end)
+			if ok and kc then Hub:SetMenuKeybind(kc) end
+		end
 	end)
 
 	----------------------------------------------------------------
 	-- Keybinds
 	----------------------------------------------------------------
 	tab:Section("keybinds")
+
+	local menuKV = tab:KeyValue("menu key", string.lower(Hub.Keybind.Name), function()
+		Hub:StartListening("_menuKey")
+	end, function()
+		Hub:SetMenuKeybind(Hub._defaultKeybind)
+	end)
+	Hub._keybindRenders = Hub._keybindRenders or {}
+	Hub._keybindRenders["_menuKey"] = function()
+		if Hub._keybindListening == "_menuKey" then
+			menuKV:Set("...")
+		else
+			menuKV:Set(string.lower(Hub.Keybind.Name))
+		end
+	end
 
 	tab:Button("clear all keybinds", function()
 		Hub:ClearAllKeybinds()
