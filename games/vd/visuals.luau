@@ -26,6 +26,7 @@ local playerTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
 	ignoreSpectator = false,
 	depthMode = "alwaysontop",
@@ -60,6 +61,7 @@ local botTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
 	depthMode = "alwaysontop",
 }
@@ -70,6 +72,7 @@ local trapTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
 	depthMode = "alwaysontop",
 }
@@ -80,6 +83,7 @@ local zombieTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
 	depthMode = "alwaysontop",
 	ignoreInactive = false,
@@ -92,7 +96,9 @@ local windowTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
+	showBlockedTimer = true,
 	depthMode = "alwaysontop",
 }
 
@@ -102,6 +108,7 @@ local palletTrack = {
 	fillTransparency = 0.7,
 	outlineTransparency = 0,
 	textOverlay = true,
+	showName = true,
 	showDistance = true,
 	depthMode = "alwaysontop",
 }
@@ -263,8 +270,9 @@ local function refreshZombieHighlights()
 	end
 end
 
-local function applyWindowHighlight(hl)
+local function applyWindowHighlight(hl, blocked)
 	local c = COLORS[windowTrack.color] or COLORS.white
+	if blocked then c = dimColor(c) end
 	hl.OutlineColor = c
 	hl.FillColor = c
 	hl.OutlineTransparency = windowTrack.outlineTransparency
@@ -275,7 +283,7 @@ end
 local function refreshWindowHighlights()
 	for _, data in pairs(windowEspData) do
 		if data.highlight then
-			applyWindowHighlight(data.highlight)
+			applyWindowHighlight(data.highlight, data.blockedSince ~= nil)
 		end
 	end
 end
@@ -544,10 +552,21 @@ local function isWindow(inst)
 		and inst:FindFirstChild("VaultTrigger") ~= nil
 end
 
+local function hasSpikes(bottom)
+	for _, desc in ipairs(bottom:GetDescendants()) do
+		if string.sub(desc.Name, 1, 5) == "Spike" then
+			return true
+		end
+	end
+	return false
+end
+
 local function removeWindowESP(model)
 	local data = windowEspData[model]
 	if not data then return end
 	if data.conn then data.conn:Disconnect() end
+	if data.spikeAddConn then data.spikeAddConn:Disconnect() end
+	if data.spikeRemoveConn then data.spikeRemoveConn:Disconnect() end
 	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
 	if data.text then pcall(data.text.Remove, data.text) end
 	local bottom = model:FindFirstChild("Bottom")
@@ -565,7 +584,10 @@ local function createWindowESP(model)
 		highlight = nil,
 		text = Drawing.new("Text"),
 		conn = nil,
+		spikeAddConn = nil,
+		spikeRemoveConn = nil,
 		origTransparency = bottom and bottom.Transparency or 1,
+		blockedSince = nil,
 	}
 	data.text.Visible = false
 	data.text.Center = true
@@ -578,6 +600,26 @@ local function createWindowESP(model)
 	data.conn = model.AncestryChanged:Connect(function(_, parent)
 		if not parent then removeWindowESP(model) end
 	end)
+
+	if bottom then
+		local function checkBlocked()
+			local spiked = hasSpikes(bottom)
+			if spiked and not data.blockedSince then
+				data.blockedSince = tick()
+			elseif not spiked and data.blockedSince then
+				data.blockedSince = nil
+			end
+		end
+		checkBlocked()
+		data.spikeAddConn = bottom.DescendantAdded:Connect(function(desc)
+			if string.sub(desc.Name, 1, 5) == "Spike" then checkBlocked() end
+		end)
+		data.spikeRemoveConn = bottom.DescendantRemoving:Connect(function(desc)
+			if string.sub(desc.Name, 1, 5) == "Spike" then
+				task.defer(checkBlocked)
+			end
+		end)
+	end
 
 	windowEspData[model] = data
 end
@@ -726,14 +768,20 @@ local function updateESP()
 			if head then
 				local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
 				if onScreen then
-					local label = player.DisplayName
+					local label = ""
+					if playerTrack.showName then label = player.DisplayName end
 					if playerTrack.showDistance then
-						label = label .. " [" .. math.floor(dist) .. "m]"
+						local distStr = "[" .. math.floor(dist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = getPlayerColor(player)
-					data.text.Visible = true
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						data.text.Color = getPlayerColor(player)
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -798,14 +846,20 @@ local function updateESP()
 			if head then
 				local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
 				if onScreen then
-					local label = model.Name .. " [BOT]"
+					local label = ""
+					if botTrack.showName then label = model.Name .. " [BOT]" end
 					if botTrack.showDistance then
-						label = label .. " [" .. math.floor(bDist) .. "m]"
+						local distStr = "[" .. math.floor(bDist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = getBotColor(model)
-					data.text.Visible = true
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						data.text.Color = getBotColor(model)
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -842,14 +896,20 @@ local function updateESP()
 			if tPart then
 				local pos, onScreen = Camera:WorldToViewportPoint(tPart.Position + Vector3.new(0, 1.5, 0))
 				if onScreen then
-					local label = "[Bear Trap]"
+					local label = ""
+					if trapTrack.showName then label = "[Bear Trap]" end
 					if trapTrack.showDistance then
-						label = label .. " [" .. math.floor(tDist) .. "m]"
+						local distStr = "[" .. math.floor(tDist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = COLORS[trapTrack.color] or COLORS.white
-					data.text.Visible = true
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						data.text.Color = COLORS[trapTrack.color] or COLORS.white
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -891,16 +951,24 @@ local function updateESP()
 			if zPart then
 				local pos, onScreen = Camera:WorldToViewportPoint(zPart.Position + Vector3.new(0, 2, 0))
 				if onScreen then
-					local label = "[SCP 049-2]"
-					if isDead then label = "[SCP 049-2] (dead)" end
-					if not isActive and not isDead then label = "[SCP 049-2] (inactive)" end
-					if zombieTrack.showDistance then
-						label = label .. " [" .. math.floor(zDist) .. "m]"
+					local label = ""
+					if zombieTrack.showName then
+						label = "[SCP 049-2]"
+						if isDead then label = "[SCP 049-2] (dead)" end
+						if not isActive and not isDead then label = "[SCP 049-2] (inactive)" end
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = COLORS[zombieTrack.color] or COLORS.white
-					data.text.Visible = true
+					if zombieTrack.showDistance then
+						local distStr = "[" .. math.floor(zDist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
+					end
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						data.text.Color = COLORS[zombieTrack.color] or COLORS.white
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -919,15 +987,16 @@ local function updateESP()
 		local wDist = wPart and (wPart.Position - refPos).Magnitude or 0
 		local wInRange = espRangeCheck(wDist, rangeEnabled, rangeMax)
 		local active = windowTrack.enabled and model.Parent ~= nil and wInRange
+		local blocked = data.blockedSince ~= nil
 
 		if active then
 			if bottom then bottom.Transparency = 0 end
 			if not data.highlight then
 				data.highlight = Instance.new("Highlight")
-				applyWindowHighlight(data.highlight)
 				data.highlight.Adornee = bottom or model
 				data.highlight.Parent = getHighlightParent()
 			end
+			applyWindowHighlight(data.highlight, blocked)
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(windowTrack.fillTransparency, wDist, rangeMax, distOpacity)
 			data.highlight.OutlineTransparency = espDistFill(windowTrack.outlineTransparency, wDist, rangeMax, distOpacity)
@@ -942,14 +1011,27 @@ local function updateESP()
 			if wPart then
 				local pos, onScreen = Camera:WorldToViewportPoint(wPart.Position + Vector3.new(0, 1.5, 0))
 				if onScreen then
-					local label = "[Window]"
-					if windowTrack.showDistance then
-						label = label .. " [" .. math.floor(wDist) .. "m]"
+					local label = ""
+					if windowTrack.showName then label = "[Window]" end
+					if blocked and windowTrack.showBlockedTimer then
+						local elapsed = tick() - data.blockedSince
+						local timerStr = string.format("blocked %.1fs", elapsed)
+						label = #label > 0 and (label .. " " .. timerStr) or timerStr
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					data.text.Color = COLORS[windowTrack.color] or COLORS.white
-					data.text.Visible = true
+					if windowTrack.showDistance then
+						local distStr = "[" .. math.floor(wDist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
+					end
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						local c = COLORS[windowTrack.color] or COLORS.white
+						if blocked then c = dimColor(c) end
+						data.text.Color = c
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -988,18 +1070,26 @@ local function updateESP()
 			if pPart then
 				local pos, onScreen = Camera:WorldToViewportPoint(pPart.Position + Vector3.new(0, 2, 0))
 				if onScreen then
-					local state = model:GetAttribute("PalletState")
-					local dropped = state == "Dropped"
-					local label = dropped and "[Pallet] (dropped)" or "[Pallet]"
-					if palletTrack.showDistance then
-						label = label .. " [" .. math.floor(pDist) .. "m]"
+					local pState = model:GetAttribute("PalletState")
+					local dropped = pState == "Dropped"
+					local label = ""
+					if palletTrack.showName then
+						label = dropped and "[Pallet] (dropped)" or "[Pallet]"
 					end
-					data.text.Text = label
-					data.text.Position = Vector2.new(pos.X, pos.Y - 20)
-					local c = COLORS[palletTrack.color] or COLORS.white
-					if dropped then c = dimColor(c) end
-					data.text.Color = c
-					data.text.Visible = true
+					if palletTrack.showDistance then
+						local distStr = "[" .. math.floor(pDist) .. "m]"
+						label = #label > 0 and (label .. " " .. distStr) or distStr
+					end
+					if #label > 0 then
+						data.text.Text = label
+						data.text.Position = Vector2.new(pos.X, pos.Y - 20)
+						local c = COLORS[palletTrack.color] or COLORS.white
+						if dropped then c = dimColor(c) end
+						data.text.Color = c
+						data.text.Visible = true
+					else
+						data.text.Visible = false
+					end
 				else
 					data.text.Visible = false
 				end
@@ -1494,6 +1584,10 @@ local function init(Hub, UI)
 			playerTrack.textOverlay = on
 		end)
 
+		sub:Toggle("show name", playerTrack.showName, function(on)
+			playerTrack.showName = on
+		end)
+
 		sub:Toggle("show distance", playerTrack.showDistance, function(on)
 			playerTrack.showDistance = on
 		end)
@@ -1526,6 +1620,10 @@ local function init(Hub, UI)
 
 		sub:Toggle("text overlay", botTrack.textOverlay, function(on)
 			botTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show name", botTrack.showName, function(on)
+			botTrack.showName = on
 		end)
 
 		sub:Toggle("show distance", botTrack.showDistance, function(on)
@@ -1580,6 +1678,10 @@ local function init(Hub, UI)
 			palletTrack.textOverlay = on
 		end)
 
+		sub:Toggle("show name", palletTrack.showName, function(on)
+			palletTrack.showName = on
+		end)
+
 		sub:Toggle("show distance", palletTrack.showDistance, function(on)
 			palletTrack.showDistance = on
 		end)
@@ -1610,8 +1712,16 @@ local function init(Hub, UI)
 			windowTrack.textOverlay = on
 		end)
 
+		sub:Toggle("show name", windowTrack.showName, function(on)
+			windowTrack.showName = on
+		end)
+
 		sub:Toggle("show distance", windowTrack.showDistance, function(on)
 			windowTrack.showDistance = on
+		end)
+
+		sub:Toggle("show blocked timer", windowTrack.showBlockedTimer, function(on)
+			windowTrack.showBlockedTimer = on
 		end)
 	end)
 
@@ -1638,6 +1748,10 @@ local function init(Hub, UI)
 
 		sub:Toggle("text overlay", zombieTrack.textOverlay, function(on)
 			zombieTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show name", zombieTrack.showName, function(on)
+			zombieTrack.showName = on
 		end)
 
 		sub:Toggle("show distance", zombieTrack.showDistance, function(on)
@@ -1676,6 +1790,10 @@ local function init(Hub, UI)
 
 		sub:Toggle("text overlay", trapTrack.textOverlay, function(on)
 			trapTrack.textOverlay = on
+		end)
+
+		sub:Toggle("show name", trapTrack.showName, function(on)
+			trapTrack.showName = on
 		end)
 
 		sub:Toggle("show distance", trapTrack.showDistance, function(on)
