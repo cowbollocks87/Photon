@@ -62,6 +62,20 @@ local function getKSHitRemote()
 	return ks and ks:FindFirstChild("KingScourgeHit")
 end
 
+local function getKSStartEvent()
+	local r = getRemotes()
+	local kp = r and r:FindFirstChild("KillerPerks")
+	local ks = kp and kp:FindFirstChild("kingscourge")
+	return ks and ks:FindFirstChild("KingScourgeStart")
+end
+
+local function getKSEndEvent()
+	local r = getRemotes()
+	local kp = r and r:FindFirstChild("KillerPerks")
+	local ks = kp and kp:FindFirstChild("kingscourge")
+	return ks and ks:FindFirstChild("KingScourgeEnd")
+end
+
 ---------------------------------------------------------------------------
 -- Skill check UI references (live lookup)
 ---------------------------------------------------------------------------
@@ -193,19 +207,15 @@ local function tryFiresignal(fake)
 	end)
 end
 
-local function directFire(resultEvent, passArgs, target, ksMode)
+local function directFire(resultEvent, passArgs, target)
 	local char = LocalPlayer.Character
 	if not char then return end
 	local result = target == "great" and "success" or "neutral"
-	if ksMode then
-		resultEvent:FireServer(passArgs[1], result, passArgs[2], char)
-	else
-		local pts = target == "great" and 1 or 0
-		local fire = {result, pts}
-		for _, v in ipairs(passArgs) do table.insert(fire, v) end
-		table.insert(fire, char)
-		resultEvent:FireServer(unpack(fire))
-	end
+	local pts = target == "great" and 1 or 0
+	local fire = {result, pts}
+	for _, v in ipairs(passArgs) do table.insert(fire, v) end
+	table.insert(fire, char)
+	resultEvent:FireServer(unpack(fire))
 	pcall(function()
 		local line = getLine()
 		if line then TweenService:Create(line, TweenInfo.new(0), {Rotation = line.Rotation}):Play() end
@@ -225,17 +235,11 @@ end
 ---------------------------------------------------------------------------
 -- Skill check core
 ---------------------------------------------------------------------------
-local function startWatching(resultEvent, passArgs, ksMode)
+local function startWatching(resultEvent, passArgs)
 	if renderConn then renderConn:Disconnect() end
 
-	local mode, rate
-	if ksMode then
-		mode = "great"
-		rate = autoSC.ksEnabled and autoSC.ksRate or autoSC.rate
-	else
-		mode = autoSC.mode
-		rate = autoSC.rate
-	end
+	local mode = autoSC.mode
+	local rate = autoSC.rate
 
 	local roll = math.random(1, 100)
 	local target
@@ -278,15 +282,15 @@ local function startWatching(resultEvent, passArgs, ksMode)
 			or tryFiresignal(fakeInput)
 
 		if inputSent then
-			local re, pa, tgt, km = resultEvent, passArgs, target, ksMode
+			local re, pa, tgt = resultEvent, passArgs, target
 			task.delay(0.2, function()
 				local c2 = getCheck()
 				if c2 and c2.Visible and autoSC.enabled then
-					directFire(re, pa, tgt, km)
+					directFire(re, pa, tgt)
 				end
 			end)
 		else
-			directFire(resultEvent, passArgs, target, ksMode)
+			directFire(resultEvent, passArgs, target)
 		end
 
 		renderConn:Disconnect()
@@ -297,25 +301,114 @@ end
 local function onGenSkillCheck(p1, p2, p3, p4)
 	if not autoSC.enabled then return end
 	if p4 ~= LocalPlayer.Character then return end
-	local passArgs = {p1, p2, p3}
-
-	local ksHit = getKSHitRemote()
-	if ksHit then
-		startWatching(ksHit, passArgs, true)
-	else
-		local re = getGenSCResult()
-		if not re then return end
-		startWatching(re, passArgs, false)
-	end
+	local re = getGenSCResult()
+	if not re then return end
+	startWatching(re, {p1, p2, p3})
 end
 
 local function onHealSkillCheck(p1, p2, p3)
 	if not autoSC.enabled then return end
 	if p3 ~= LocalPlayer.Character then return end
-
 	local re = getHealSCResult()
 	if not re then return end
-	startWatching(re, {p1, p2}, false)
+	startWatching(re, {p1, p2})
+end
+
+---------------------------------------------------------------------------
+-- King's Scourge — separate event chain, not routed through SkillCheckEvent
+---------------------------------------------------------------------------
+local ksState = nil
+local ksRenderConn = nil
+
+local function stopKSWatcher()
+	if ksRenderConn then ksRenderConn:Disconnect(); ksRenderConn = nil end
+	if ksState and ksState.endConn then pcall(ksState.endConn.Disconnect, ksState.endConn) end
+	ksState = nil
+end
+
+local function onKSStart(genModel, genPart, count, guid, character, guid2)
+	if not autoSC.enabled then return end
+	if character ~= LocalPlayer.Character then return end
+
+	stopKSWatcher()
+
+	local ksHit = getKSHitRemote()
+	if not ksHit then return end
+
+	local rate = autoSC.ksEnabled and autoSC.ksRate or autoSC.rate
+
+	ksState = { genPart = genPart, guid = guid, ksHit = ksHit, rate = rate }
+
+	local endEv = getKSEndEvent()
+	if endEv then
+		ksState.endConn = endEv.OnClientEvent:Connect(function()
+			stopKSWatcher()
+		end)
+	end
+
+	local targetRot = nil
+	local fired = false
+
+	ksRenderConn = RunService.RenderStepped:Connect(function()
+		if not autoSC.enabled or not ksState then
+			stopKSWatcher()
+			return
+		end
+
+		local check = getCheck()
+		if not check or not check.Visible then
+			targetRot = nil
+			fired = false
+			return
+		end
+
+		local line = getLine()
+		if not line then return end
+
+		if fired and line.Rotation < 20 then
+			targetRot = nil
+			fired = false
+		end
+
+		if fired then return end
+
+		if not targetRot then
+			local goal = getGoal()
+			local gr = goal and goal.Rotation or 0
+			local roll = math.random(1, 100)
+			if roll > ksState.rate then
+				fired = true
+				return
+			end
+			targetRot = gr + 104 + bellRand() * 8
+		end
+
+		if line.Rotation < targetRot then return end
+
+		fired = true
+
+		local inputSent = tryKeypress()
+			or tryGetConnections(fakeInput)
+			or tryFiresignal(fakeInput)
+
+		if inputSent then
+			local st = ksState
+			task.delay(0.2, function()
+				local c2 = getCheck()
+				if c2 and c2.Visible and autoSC.enabled and st then
+					local char = LocalPlayer.Character
+					if char then
+						st.ksHit:FireServer(st.genPart, "success", st.guid, char)
+					end
+				end
+			end)
+		else
+			local char = LocalPlayer.Character
+			if char and ksState then
+				ksState.ksHit:FireServer(ksState.genPart, "success", ksState.guid, char)
+			end
+		end
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -640,9 +733,9 @@ local function init(Hub, UI)
 	local scToggle = tab:Toggle("auto skill check", false, function(on)
 		autoSC.enabled = on
 		Hub:Log(on and "auto skill check on" or "auto skill check off")
-		if not on and renderConn then
-			renderConn:Disconnect()
-			renderConn = nil
+		if not on then
+			if renderConn then renderConn:Disconnect(); renderConn = nil end
+			stopKSWatcher()
 		end
 	end, "autoSC")
 
@@ -670,7 +763,7 @@ local function init(Hub, UI)
 	end, { Step = 5, Suffix = "%" })
 
 	local scConns = {}
-	local lastGenSC, lastHealSC = nil, nil
+	local lastGenSC, lastHealSC, lastKSStart = nil, nil, nil
 
 	local function hookSCEvents()
 		local genEv = getGenSCEvent()
@@ -685,6 +778,12 @@ local function init(Hub, UI)
 			lastHealSC = healEv
 			scConns.heal = healEv.OnClientEvent:Connect(onHealSkillCheck)
 		end
+		local ksEv = getKSStartEvent()
+		if ksEv and ksEv ~= lastKSStart then
+			if scConns.ks then pcall(scConns.ks.Disconnect, scConns.ks) end
+			lastKSStart = ksEv
+			scConns.ks = ksEv.OnClientEvent:Connect(onKSStart)
+		end
 	end
 
 	hookSCEvents()
@@ -692,7 +791,8 @@ local function init(Hub, UI)
 		if not autoSC.enabled then return end
 		local genEv = getGenSCEvent()
 		local healEv = getHealSCEvent()
-		if genEv ~= lastGenSC or healEv ~= lastHealSC then
+		local ksEv = getKSStartEvent()
+		if genEv ~= lastGenSC or healEv ~= lastHealSC or ksEv ~= lastKSStart then
 			hookSCEvents()
 		end
 	end))
@@ -797,6 +897,7 @@ local function init(Hub, UI)
 		teardownParryWatcher()
 		stopRadiusRender()
 		destroyRadiusPart()
+		stopKSWatcher()
 		for _, c in pairs(scConns) do pcall(c.Disconnect, c) end
 		table.clear(scConns)
 	end)
