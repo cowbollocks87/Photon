@@ -710,10 +710,12 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(playerTrack.fillTransparency, dist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(playerTrack.outlineTransparency, dist, rangeMax, distOpacity)
 
 			if teamESP.enabled and teamESP.survivorHealth.enabled and getTeamName(player) == "Survivors" then
 				applyPlayerHighlight(data.highlight, player)
 				data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, dist, rangeMax, distOpacity)
+				data.highlight.OutlineTransparency = espDistFill(data.highlight.OutlineTransparency, dist, rangeMax, distOpacity)
 			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
@@ -780,10 +782,12 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(botTrack.fillTransparency, bDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(botTrack.outlineTransparency, bDist, rangeMax, distOpacity)
 
 			if teamESP.enabled and teamESP.survivorHealth.enabled then
 				applyBotHighlight(data.highlight, model)
 				data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, bDist, rangeMax, distOpacity)
+				data.highlight.OutlineTransparency = espDistFill(data.highlight.OutlineTransparency, bDist, rangeMax, distOpacity)
 			end
 		else
 			if data.highlight then data.highlight.Enabled = false end
@@ -829,6 +833,7 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(trapTrack.fillTransparency, tDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(trapTrack.outlineTransparency, tDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
@@ -877,6 +882,7 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(zombieTrack.fillTransparency, zDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(zombieTrack.outlineTransparency, zDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
@@ -924,6 +930,7 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(windowTrack.fillTransparency, wDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(windowTrack.outlineTransparency, wDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 			if bottom and data.origTransparency ~= nil then
@@ -972,6 +979,7 @@ local function updateESP()
 			end
 			data.highlight.Enabled = true
 			data.highlight.FillTransparency = espDistFill(data.highlight.FillTransparency, pDist, rangeMax, distOpacity)
+			data.highlight.OutlineTransparency = espDistFill(data.highlight.OutlineTransparency, pDist, rangeMax, distOpacity)
 		else
 			if data.highlight then data.highlight.Enabled = false end
 		end
