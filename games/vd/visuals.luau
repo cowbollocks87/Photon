@@ -553,20 +553,21 @@ local function isWindow(inst)
 end
 
 local function hasSpikes(bottom)
-	for _, desc in ipairs(bottom:GetDescendants()) do
-		if string.sub(desc.Name, 1, 5) == "Spike" then
-			return true
+	local ok, result = pcall(function()
+		for _, desc in ipairs(bottom:GetDescendants()) do
+			if string.sub(desc.Name, 1, 5) == "Spike" then
+				return true
+			end
 		end
-	end
-	return false
+		return false
+	end)
+	return ok and result or false
 end
 
 local function removeWindowESP(model)
 	local data = windowEspData[model]
 	if not data then return end
 	if data.conn then data.conn:Disconnect() end
-	if data.spikeAddConn then data.spikeAddConn:Disconnect() end
-	if data.spikeRemoveConn then data.spikeRemoveConn:Disconnect() end
 	if data.highlight then pcall(data.highlight.Destroy, data.highlight) end
 	if data.text then pcall(data.text.Remove, data.text) end
 	local bottom = model:FindFirstChild("Bottom")
@@ -584,8 +585,6 @@ local function createWindowESP(model)
 		highlight = nil,
 		text = Drawing.new("Text"),
 		conn = nil,
-		spikeAddConn = nil,
-		spikeRemoveConn = nil,
 		origTransparency = bottom and bottom.Transparency or 1,
 		blockedSince = nil,
 	}
@@ -600,26 +599,6 @@ local function createWindowESP(model)
 	data.conn = model.AncestryChanged:Connect(function(_, parent)
 		if not parent then removeWindowESP(model) end
 	end)
-
-	if bottom then
-		local function checkBlocked()
-			local spiked = hasSpikes(bottom)
-			if spiked and not data.blockedSince then
-				data.blockedSince = tick()
-			elseif not spiked and data.blockedSince then
-				data.blockedSince = nil
-			end
-		end
-		checkBlocked()
-		data.spikeAddConn = bottom.DescendantAdded:Connect(function(desc)
-			if string.sub(desc.Name, 1, 5) == "Spike" then checkBlocked() end
-		end)
-		data.spikeRemoveConn = bottom.DescendantRemoving:Connect(function(desc)
-			if string.sub(desc.Name, 1, 5) == "Spike" then
-				task.defer(checkBlocked)
-			end
-		end)
-	end
 
 	windowEspData[model] = data
 end
@@ -987,6 +966,13 @@ local function updateESP()
 		local wDist = wPart and (wPart.Position - refPos).Magnitude or 0
 		local wInRange = espRangeCheck(wDist, rangeEnabled, rangeMax)
 		local active = windowTrack.enabled and model.Parent ~= nil and wInRange
+
+		local spiked = bottom and hasSpikes(bottom) or false
+		if spiked and not data.blockedSince then
+			data.blockedSince = tick()
+		elseif not spiked and data.blockedSince then
+			data.blockedSince = nil
+		end
 		local blocked = data.blockedSince ~= nil
 
 		if active then
