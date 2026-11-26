@@ -454,6 +454,16 @@ local M1_ANIMS = {
 	-- the butcher
 	["rbxassetid://127417297154354"] = true, -- lungehold
 	["rbxassetid://83333467665074"]  = true, -- attack
+	-- the killer (frenzy m1s)
+	["rbxassetid://104540716539347"] = true, -- lungehold
+	["rbxassetid://79310600168078"]  = true, -- attack
+}
+
+local SPECIAL_ANIMS = {
+	-- the hidden — mark
+	["rbxassetid://98163597193511"]  = true, -- windup
+	-- the abysswalker — dark severance
+	["rbxassetid://100014992013740"] = true, -- charge
 }
 
 local ANIM_BLACKLIST = {
@@ -668,7 +678,6 @@ local function connectAnimator(animator, char)
 		if not autoParry.enabled then return end
 
 		local id = track.Animation and track.Animation.AnimationId or ""
-		local animName = track.Animation and track.Animation.Name or ""
 
 		if id == FRENZY_START then frenzyActive = true; return end
 		if id == FRENZY_CANCEL then frenzyActive = false; return end
@@ -678,7 +687,7 @@ local function connectAnimator(animator, char)
 		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then return end
 		if autoParry.ignoreFrenzy and frenzyActive then return end
 
-		if not M1_ANIMS[id] then return end
+		if not M1_ANIMS[id] and not SPECIAL_ANIMS[id] then return end
 
 		local function startWatch()
 			if not autoParry.enabled then return end
