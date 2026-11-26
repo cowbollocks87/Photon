@@ -7,6 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local function init(Hub, UI)
 	local tab = Hub:Tab("enhancements")
+	print("[Photon] enhancements init start")
 
 	----------------------------------------------------------------
 	-- State
@@ -91,7 +92,9 @@ local function init(Hub, UI)
 	----------------------------------------------------------------
 	-- Speed
 	----------------------------------------------------------------
+	print("[Photon] enhancements creating speed section")
 	tab:Section("speed")
+	print("[Photon] enhancements section created")
 
 	local speedToggle = tab:Toggle("speed modifier", false, function(on)
 		enhState.speedEnabled = on
@@ -101,6 +104,7 @@ local function init(Hub, UI)
 	local speedSlider = tab:Slider("speed multiplier", 1.0, 3.0, enhState.speedMultiplier, function(v)
 		enhState.speedMultiplier = v
 	end, { Step = 0.1, Suffix = "x" })
+	print("[Photon] enhancements speed slider created")
 
 	----------------------------------------------------------------
 	-- Vault
@@ -157,6 +161,7 @@ local function init(Hub, UI)
 			savedVaultEvaluate = nil
 		end
 	end)
+	print("[Photon] enhancements init complete")
 end
 
 return { init = init }
