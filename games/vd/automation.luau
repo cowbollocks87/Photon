@@ -55,6 +55,13 @@ local function getSlowEvent()
 	return m and m:FindFirstChild("Slow")
 end
 
+local function getKSHitRemote()
+	local r = getRemotes()
+	local kp = r and r:FindFirstChild("KillerPerks")
+	local ks = kp and kp:FindFirstChild("kingscourge")
+	return ks and ks:FindFirstChild("KingScourgeHit")
+end
+
 ---------------------------------------------------------------------------
 -- Skill check UI references (live lookup)
 ---------------------------------------------------------------------------
@@ -126,6 +133,8 @@ local autoSC = {
 	enabled = false,
 	mode = "great",
 	rate = 100,
+	ksEnabled = false,
+	ksRate = 100,
 }
 
 local autoParry = {
@@ -184,15 +193,19 @@ local function tryFiresignal(fake)
 	end)
 end
 
-local function directFire(resultEvent, passArgs, target)
+local function directFire(resultEvent, passArgs, target, ksMode)
 	local char = LocalPlayer.Character
 	if not char then return end
 	local result = target == "great" and "success" or "neutral"
-	local pts = target == "great" and 1 or 0
-	local fire = {result, pts}
-	for _, v in ipairs(passArgs) do table.insert(fire, v) end
-	table.insert(fire, char)
-	resultEvent:FireServer(unpack(fire))
+	if ksMode then
+		resultEvent:FireServer(passArgs[1], result, passArgs[2], char)
+	else
+		local pts = target == "great" and 1 or 0
+		local fire = {result, pts}
+		for _, v in ipairs(passArgs) do table.insert(fire, v) end
+		table.insert(fire, char)
+		resultEvent:FireServer(unpack(fire))
+	end
 	pcall(function()
 		local line = getLine()
 		if line then TweenService:Create(line, TweenInfo.new(0), {Rotation = line.Rotation}):Play() end
@@ -212,15 +225,24 @@ end
 ---------------------------------------------------------------------------
 -- Skill check core
 ---------------------------------------------------------------------------
-local function startWatching(resultEvent, passArgs)
+local function startWatching(resultEvent, passArgs, ksMode)
 	if renderConn then renderConn:Disconnect() end
+
+	local mode, rate
+	if ksMode then
+		mode = "great"
+		rate = autoSC.ksEnabled and autoSC.ksRate or autoSC.rate
+	else
+		mode = autoSC.mode
+		rate = autoSC.rate
+	end
 
 	local roll = math.random(1, 100)
 	local target
-	if autoSC.mode == "great" then
-		target = roll <= autoSC.rate and "great" or "good"
+	if mode == "great" then
+		target = roll <= rate and "great" or "good"
 	else
-		target = roll <= autoSC.rate and "good" or "skip"
+		target = roll <= rate and "good" or "skip"
 	end
 
 	if target == "skip" then return end
@@ -256,15 +278,15 @@ local function startWatching(resultEvent, passArgs)
 			or tryFiresignal(fakeInput)
 
 		if inputSent then
-			local re, pa, tgt = resultEvent, passArgs, target
+			local re, pa, tgt, km = resultEvent, passArgs, target, ksMode
 			task.delay(0.2, function()
 				local c2 = getCheck()
 				if c2 and c2.Visible and autoSC.enabled then
-					directFire(re, pa, tgt)
+					directFire(re, pa, tgt, km)
 				end
 			end)
 		else
-			directFire(resultEvent, passArgs, target)
+			directFire(resultEvent, passArgs, target, ksMode)
 		end
 
 		renderConn:Disconnect()
@@ -272,15 +294,21 @@ local function startWatching(resultEvent, passArgs)
 	end)
 end
 
-local function onSkillCheck(getResultEvent, ...)
+local function onSkillCheck(getResultEvent, isGen, ...)
 	if not autoSC.enabled then return end
 	local args = {...}
 	if args[#args] ~= LocalPlayer.Character then return end
-	local re = getResultEvent()
-	if not re then return end
 	local passArgs = {}
 	for i = 1, #args - 1 do passArgs[i] = args[i] end
-	startWatching(re, passArgs)
+
+	local ksHit = isGen and getKSHitRemote()
+	if ksHit then
+		startWatching(ksHit, passArgs, true)
+	else
+		local re = getResultEvent()
+		if not re then return end
+		startWatching(re, passArgs, false)
+	end
 end
 
 ---------------------------------------------------------------------------
@@ -624,6 +652,16 @@ local function init(Hub, UI)
 		autoSC.rate = v
 	end, { Step = 5, Suffix = "%" })
 
+	tab:Section("king's scourge")
+
+	local ksToggle = tab:Toggle("custom king's scourge rate", false, function(on)
+		autoSC.ksEnabled = on
+	end)
+
+	tab:Slider("king's scourge rate", 0, 100, autoSC.ksRate, function(v)
+		autoSC.ksRate = v
+	end, { Step = 5, Suffix = "%" })
+
 	local scConns = {}
 	local lastGenSC, lastHealSC = nil, nil
 
@@ -633,7 +671,7 @@ local function init(Hub, UI)
 			if scConns.gen then pcall(scConns.gen.Disconnect, scConns.gen) end
 			lastGenSC = genEv
 			scConns.gen = genEv.OnClientEvent:Connect(function(...)
-				onSkillCheck(getGenSCResult, ...)
+				onSkillCheck(getGenSCResult, true, ...)
 			end)
 		end
 		local healEv = getHealSCEvent()
@@ -641,7 +679,7 @@ local function init(Hub, UI)
 			if scConns.heal then pcall(scConns.heal.Disconnect, scConns.heal) end
 			lastHealSC = healEv
 			scConns.heal = healEv.OnClientEvent:Connect(function(...)
-				onSkillCheck(getHealSCResult, ...)
+				onSkillCheck(getHealSCResult, false, ...)
 			end)
 		end
 	end
@@ -744,6 +782,7 @@ local function init(Hub, UI)
 	Hub:RegisterConfig("autoParry", autoParry)
 	Hub:OnConfigLoad(function()
 		scToggle:Set(autoSC.enabled)
+		ksToggle:Set(autoSC.ksEnabled)
 		parryToggle:Set(autoParry.enabled)
 		radiusToggle:Set(autoParry.showRadius)
 		faceToggle:Set(autoParry.faceCheck)
