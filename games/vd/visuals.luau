@@ -270,6 +270,11 @@ local function refreshZombieHighlights()
 	end
 end
 
+local function dimColor(c)
+	local h, s, v = c:ToHSV()
+	return Color3.fromHSV(h, s, v * 0.55)
+end
+
 local function applyWindowHighlight(hl, blocked)
 	local c = COLORS[windowTrack.color] or COLORS.white
 	if blocked then c = dimColor(c) end
@@ -286,11 +291,6 @@ local function refreshWindowHighlights()
 			applyWindowHighlight(data.highlight, data.blockedSince ~= nil)
 		end
 	end
-end
-
-local function dimColor(c)
-	local h, s, v = c:ToHSV()
-	return Color3.fromHSV(h, s, v * 0.55)
 end
 
 local function applyPalletHighlight(hl, model)
