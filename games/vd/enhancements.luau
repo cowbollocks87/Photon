@@ -2,6 +2,7 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
@@ -9,6 +10,20 @@ local SPEED_METHODS = { "cframe", "attribute" }
 
 local function init(Hub, UI)
 	local tab = Hub:Tab("enhancements")
+
+	local T = UI.Theme
+	local H = UI.Helpers
+	local C = UI.Constants
+	local ROW_H = C.ROW_H
+
+	local COLOR_MAP = {}
+	local COLOR_NAMES = {}
+	for name, entry in pairs(UI.Colors) do
+		COLOR_MAP[name] = entry.color
+	end
+	for _, name in ipairs(UI.ColorList) do
+		table.insert(COLOR_NAMES, name)
+	end
 
 	----------------------------------------------------------------
 	-- State
@@ -24,6 +39,10 @@ local function init(Hub, UI)
 		preset2 = 1.05,
 		preset3 = 1.08,
 		spearTrajectory = false,
+		trajColor = "cyan",
+		trajOnTargetColor = "green",
+		trajTransparency = 0.5,
+		trajNoclip = false,
 	}
 
 	local speedConn = nil
@@ -235,7 +254,7 @@ local function init(Hub, UI)
 	end, "fastVault")
 
 	----------------------------------------------------------------
-	-- Veil — spear trajectory
+	-- Veil — spear trajectory (3D)
 	----------------------------------------------------------------
 	tab:Section("veil")
 
@@ -245,27 +264,56 @@ local function init(Hub, UI)
 		MaxLife = 4,
 		SpawnOffset = 3,
 	}
-	local TRAJ_SEGMENTS = 40
-	local TRAJ_ENEMY_COLOR = Color3.fromRGB(255, 60, 60)
-	local TRAJ_SELF_COLOR = Color3.fromRGB(100, 200, 255)
+	local TRAJ_SEGMENTS = 30
 
-	local trajLines = {}
-	local trajImpact = Drawing.new("Circle")
-	trajImpact.Visible = false
-	trajImpact.Radius = 4
-	trajImpact.Thickness = 2
-	trajImpact.Filled = false
-
-	for i = 1, TRAJ_SEGMENTS do
-		local line = Drawing.new("Line")
-		line.Visible = false
-		line.Thickness = 2
-		line.Transparency = 0.3
-		trajLines[i] = line
-	end
-
+	local trajParts = {}
+	local impactSphere = nil
 	local trajConn = nil
 	local chargeStart = {}
+
+	local function createTrajParts()
+		for i = 1, TRAJ_SEGMENTS do
+			local part = Instance.new("Part")
+			part.Name = "PhotonTraj"
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CastShadow = false
+			part.Material = Enum.Material.Neon
+			part.Transparency = 1
+			part.Parent = workspace
+			trajParts[i] = part
+		end
+		impactSphere = Instance.new("Part")
+		impactSphere.Name = "PhotonTrajImpact"
+		impactSphere.Shape = Enum.PartType.Ball
+		impactSphere.Anchored = true
+		impactSphere.CanCollide = false
+		impactSphere.CanQuery = false
+		impactSphere.CastShadow = false
+		impactSphere.Material = Enum.Material.Neon
+		impactSphere.Size = Vector3.new(1.2, 1.2, 1.2)
+		impactSphere.Transparency = 1
+		impactSphere.Parent = workspace
+	end
+
+	local function destroyTrajParts()
+		for _, part in ipairs(trajParts) do
+			pcall(part.Destroy, part)
+		end
+		table.clear(trajParts)
+		if impactSphere then
+			pcall(impactSphere.Destroy, impactSphere)
+			impactSphere = nil
+		end
+	end
+
+	local function hideTrajectory()
+		for _, part in ipairs(trajParts) do
+			part.Transparency = 1
+		end
+		if impactSphere then impactSphere.Transparency = 1 end
+	end
 
 	local function getTeam(player)
 		local ok, team = pcall(function() return player.Team end)
@@ -284,56 +332,43 @@ local function init(Hub, UI)
 		return nil, nil
 	end
 
-	local function hideTrajectory()
-		for _, line in ipairs(trajLines) do
-			line.Visible = false
-		end
-		trajImpact.Visible = false
-	end
-
 	local trajRayParams = RaycastParams.new()
 	trajRayParams.FilterType = Enum.RaycastFilterType.Exclude
+	local targetRayParams = RaycastParams.new()
+	targetRayParams.FilterType = Enum.RaycastFilterType.Include
 
 	local function updateTrajectory()
-		local cam = workspace.CurrentCamera
-		if not cam then hideTrajectory() return end
-
+		if #trajParts == 0 then return end
 		local localChar = getCharacter()
 		if not localChar then hideTrajectory() return end
 
 		for player, _ in pairs(chargeStart) do
-			local char = player.Character
-			if not char or char:GetAttribute("spearmode") ~= true then
+			local c = player.Character
+			if not c or c:GetAttribute("spearmode") ~= true then
 				chargeStart[player] = nil
 			end
 		end
 
-		local origin, direction, power, color
+		local origin, direction, power
+		local isLocalVeil = false
 
 		if localChar:GetAttribute("spearmode") == true then
+			isLocalVeil = true
+			local cam = workspace.CurrentCamera
+			if not cam then hideTrajectory() return end
 			origin = cam.CFrame.Position
 			direction = cam.CFrame.LookVector
-			color = TRAJ_SELF_COLOR
-			if not chargeStart[LocalPlayer] then
-				chargeStart[LocalPlayer] = tick()
-			end
-			local elapsed = tick() - chargeStart[LocalPlayer]
-			power = math.clamp(elapsed * SPEAR.Speed, 1, SPEAR.Speed)
+			if not chargeStart[LocalPlayer] then chargeStart[LocalPlayer] = tick() end
+			power = math.clamp((tick() - chargeStart[LocalPlayer]) * SPEAR.Speed, 1, SPEAR.Speed)
 		else
-			local veilPlayer, veilChar = findChargingVeil()
-			if not veilPlayer then hideTrajectory() return end
-
-			local head = veilChar:FindFirstChild("Head")
+			local vp, vc = findChargingVeil()
+			if not vp then hideTrajectory() return end
+			local head = vc:FindFirstChild("Head")
 			if not head then hideTrajectory() return end
-
 			origin = head.Position
 			direction = head.CFrame.LookVector
-			color = TRAJ_ENEMY_COLOR
-			if not chargeStart[veilPlayer] then
-				chargeStart[veilPlayer] = tick()
-			end
-			local elapsed = tick() - chargeStart[veilPlayer]
-			power = math.clamp(elapsed * SPEAR.Speed, 1, SPEAR.Speed)
+			if not chargeStart[vp] then chargeStart[vp] = tick() end
+			power = math.clamp((tick() - chargeStart[vp]) * SPEAR.Speed, 1, SPEAR.Speed)
 		end
 
 		origin = origin + direction * SPEAR.SpawnOffset
@@ -352,8 +387,7 @@ local function init(Hub, UI)
 		for i = 0, TRAJ_SEGMENTS do
 			local t = i * dt
 			local pos = origin + vel * t + SPEAR.Gravity * (0.5 * t * t)
-
-			if i > 0 and not hitGround then
+			if i > 0 and not enhState.trajNoclip and not hitGround then
 				local prev = points[#points]
 				local seg = pos - prev
 				local result = workspace:Raycast(prev, seg, trajRayParams)
@@ -366,48 +400,60 @@ local function init(Hub, UI)
 			else
 				table.insert(points, pos)
 			end
-
 			if hitGround then break end
 		end
 
-		for i = 1, TRAJ_SEGMENTS do
-			local line = trajLines[i]
-			if i < #points then
-				local p1 = points[i]
-				local p2 = points[i + 1]
-				local sp1, on1 = cam:WorldToViewportPoint(p1)
-				local sp2, on2 = cam:WorldToViewportPoint(p2)
-
-				if (on1 or on2) and sp1.Z > 0 and sp2.Z > 0 then
-					line.From = Vector2.new(sp1.X, sp1.Y)
-					line.To = Vector2.new(sp2.X, sp2.Y)
-					line.Color = color
-					line.Visible = true
-				else
-					line.Visible = false
+		local onTarget = false
+		if isLocalVeil then
+			local survivorChars = {}
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and getTeam(p) == "Survivors" and p.Character then
+					table.insert(survivorChars, p.Character)
 				end
-			else
-				line.Visible = false
+			end
+			if #survivorChars > 0 then
+				targetRayParams.FilterDescendantsInstances = survivorChars
+				for i = 1, #points - 1 do
+					local seg = points[i + 1] - points[i]
+					local result = workspace:Raycast(points[i], seg, targetRayParams)
+					if result then onTarget = true; break end
+				end
 			end
 		end
 
-		if hitGround and #points > 0 then
-			local sp, on = cam:WorldToViewportPoint(points[#points])
-			if on and sp.Z > 0 then
-				trajImpact.Position = Vector2.new(sp.X, sp.Y)
-				trajImpact.Color = color
-				trajImpact.Visible = true
+		local color = COLOR_MAP[onTarget and enhState.trajOnTargetColor or enhState.trajColor] or Color3.new(1, 1, 1)
+		local trans = enhState.trajTransparency
+
+		for i = 1, TRAJ_SEGMENTS do
+			local part = trajParts[i]
+			if i < #points then
+				local p1, p2 = points[i], points[i + 1]
+				local mid = (p1 + p2) / 2
+				local dist = (p2 - p1).Magnitude
+				part.Size = Vector3.new(0.15, 0.15, dist)
+				part.CFrame = CFrame.lookAt(mid, p2)
+				part.Color = color
+				part.Transparency = trans
 			else
-				trajImpact.Visible = false
+				part.Transparency = 1
 			end
-		else
-			trajImpact.Visible = false
+		end
+
+		if impactSphere then
+			if hitGround and not enhState.trajNoclip and #points > 0 then
+				impactSphere.Position = points[#points]
+				impactSphere.Color = color
+				impactSphere.Transparency = trans
+			else
+				impactSphere.Transparency = 1
+			end
 		end
 	end
 
 	local function applyTrajectory()
 		if trajConn then trajConn:Disconnect(); trajConn = nil end
 		if enhState.spearTrajectory then
+			if #trajParts == 0 then createTrajParts() end
 			trajConn = RunService.RenderStepped:Connect(updateTrajectory)
 		else
 			hideTrajectory()
@@ -415,12 +461,276 @@ local function init(Hub, UI)
 		end
 	end
 
-	local trajToggle = tab:Toggle("spear trajectory", false, function(on)
-		enhState.spearTrajectory = on
-		applyTrajectory()
-	end, "spearTraj")
+	----------------------------------------------------------------
+	-- Veil — track dropdown UI
+	----------------------------------------------------------------
+	tab.Order = tab.Order + 1
+	local trajRow = H.Frame(tab.Page, {
+		Name = "Track_spear_trajectory",
+		LayoutOrder = tab.Order,
+		Size = UDim2.new(1, 0, 0, ROW_H),
+		BackgroundTransparency = 1,
+	})
+	local trajHit = H.Button(trajRow, "", {Name = "Hit", Size = UDim2.fromScale(1, 1)})
+	trajHit.MouseEnter:Connect(function() H.tween(trajHit, {BackgroundTransparency = 0.35}) end)
+	trajHit.MouseLeave:Connect(function() H.tween(trajHit, {BackgroundTransparency = 1}) end)
 
-	tab:Label("shows predicted spear arc when the veil is charging. cyan = yours, red = enemy.")
+	local trajCaret = H.Text(trajHit, "[+]", {Position = H.U(8, 0), Size = H.U(24, ROW_H), TextColor3 = T.dim})
+	H.Text(trajHit, "spear trajectory", {Position = H.U(36, 0), Size = UDim2.new(1, -172, 1, 0), TextColor3 = T.text})
+
+	local trajToggleBox = H.Text(trajHit, "[ ]", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -8, 0, 0),
+		Size = H.U(28, ROW_H),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = T.dim,
+	})
+	local trajToggleVal = H.Text(trajHit, "off", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -40, 0, 0),
+		Size = H.U(32, ROW_H),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextSize = 11,
+		TextColor3 = T.dim,
+	})
+
+	local function trajRenderToggle()
+		trajToggleBox.Text = enhState.spearTrajectory and "[x]" or "[ ]"
+		trajToggleBox.TextColor3 = enhState.spearTrajectory and T.white or T.dim
+		trajToggleVal.Text = enhState.spearTrajectory and "on" or "off"
+		trajToggleVal.TextColor3 = enhState.spearTrajectory and T.white or T.dim
+	end
+	trajRenderToggle()
+
+	local trajBindId = "spearTraj"
+	local trajBindBox = H.Button(trajHit, "", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -74, 0.5, 0),
+		Size = H.U(46, 16),
+		TextSize = 10,
+		FontFace = UI.Fonts.Medium,
+		TextColor3 = T.mid,
+		BackgroundColor3 = T.raised,
+		BackgroundTransparency = 0,
+	})
+	H.Stroke(trajBindBox, T.line)
+	Hub._keybindRenders = Hub._keybindRenders or {}
+	local function trajRenderBind()
+		if Hub._keybindListening == trajBindId then
+			trajBindBox.Text = "..."
+			trajBindBox.TextColor3 = T.accent
+		else
+			local k = Hub._keybinds[trajBindId]
+			trajBindBox.Text = k or "none"
+			trajBindBox.TextColor3 = k and T.text or T.dim
+		end
+	end
+	Hub._keybindRenders[trajBindId] = trajRenderBind
+	trajRenderBind()
+	trajBindBox.MouseButton1Click:Connect(function()
+		Hub:StartListening(trajBindId)
+	end)
+	trajBindBox.MouseButton2Click:Connect(function()
+		Hub:ClearKeybind(trajBindId)
+	end)
+
+	local trajToggleHandle = {
+		Set = function(_, v)
+			enhState.spearTrajectory = v == true
+			trajRenderToggle()
+			applyTrajectory()
+		end,
+		Get = function() return enhState.spearTrajectory end,
+	}
+	Hub:RegisterKeybind(trajBindId, trajToggleHandle, "spear trajectory")
+
+	-- collapsible content
+	tab.Order = tab.Order + 1
+	local trajContent = H.Frame(tab.Page, {
+		Name = "Track_spear_trajectory_Content",
+		LayoutOrder = tab.Order,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Visible = false,
+	})
+	H.List(trajContent, 2)
+	local trajSubOrder = 0
+
+	local function trajSubRow(h)
+		trajSubOrder = trajSubOrder + 1
+		return H.Frame(trajContent, {
+			Name = "SubRow",
+			LayoutOrder = trajSubOrder,
+			Size = UDim2.new(1, 0, 0, h or 22),
+			BackgroundTransparency = 1,
+		})
+	end
+
+	local function trajSubChoice(label, options, default, callback)
+		local row = trajSubRow(22)
+		local idx = table.find(options, default) or 1
+		local pad = H.Frame(row, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1})
+		H.Pad(pad, 0, 0, 0, 20)
+		H.Text(pad, label, {Position = H.U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
+		local val = H.Button(pad, tostring(options[idx]), {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 0),
+			Size = H.U(80, 22),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			FontFace = UI.Fonts.Medium,
+			TextColor3 = T.mid,
+			TextSize = 11,
+		})
+		val.MouseEnter:Connect(function() val.TextColor3 = T.white end)
+		val.MouseLeave:Connect(function() val.TextColor3 = T.mid end)
+		val.MouseButton1Click:Connect(function()
+			idx = (idx % #options) + 1
+			val.Text = tostring(options[idx])
+			if callback then pcall(callback, options[idx]) end
+		end)
+		return {
+			Get = function() return options[idx] end,
+			Set = function(_, v)
+				local i = table.find(options, v)
+				if i then idx = i; val.Text = tostring(options[idx]) end
+			end,
+		}
+	end
+
+	local function trajSubSlider(label, min, max, default, callback, opts)
+		opts = opts or {}
+		local step = opts.Step or 0.1
+		local row = trajSubRow(22)
+		local value = math.clamp(default or min, min, max)
+		local pad = H.Frame(row, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1})
+		H.Pad(pad, 0, 0, 0, 20)
+		H.Text(pad, label, {Position = H.U(8, 0), Size = UDim2.new(0.5, -8, 1, 0), TextSize = 11, TextColor3 = T.dim})
+		local valLabel = H.Text(pad, string.format("%.2f", value), {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 0),
+			Size = H.U(40, 22),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextSize = 11,
+			TextColor3 = T.white,
+		})
+		local BAR = 10
+		local bar = H.Button(pad, "", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -50, 0.5, 0),
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+			RichText = true,
+			TextColor3 = T.dim,
+			TextSize = 12,
+		})
+		local function render()
+			local filled = math.floor((value - min) / (max - min) * BAR + 0.5)
+			bar.Text = '[<font color="#E2E2E2">' .. string.rep("#", filled) .. '</font><font color="#3A3A3A">' .. string.rep("-", BAR - filled) .. '</font>]'
+			valLabel.Text = string.format("%.2f", value)
+		end
+		local function set(v)
+			v = math.clamp(min + math.floor((v - min) / step + 0.5) * step, min, max)
+			if v == value then return end
+			value = v
+			render()
+			if callback then pcall(callback, value) end
+		end
+		render()
+		local dragging = false
+		bar.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				local size = bar.AbsoluteSize.X
+				local cw = size / (BAR + 2)
+				local ratio = math.clamp((input.Position.X - bar.AbsolutePosition.X - cw) / (size - 2 * cw), 0, 1)
+				set(min + (max - min) * ratio)
+			end
+		end)
+		Hub:_track(UserInputService.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local size = bar.AbsoluteSize.X
+				local cw = size / (BAR + 2)
+				local ratio = math.clamp((input.Position.X - bar.AbsolutePosition.X - cw) / (size - 2 * cw), 0, 1)
+				set(min + (max - min) * ratio)
+			end
+		end))
+		Hub:_track(UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+			end
+		end))
+		return { Get = function() return value end, Set = function(_, v) set(v) end }
+	end
+
+	local function trajSubToggle(label, default, callback)
+		local row = trajSubRow(22)
+		local sState = default == true
+		local pad = H.Frame(row, {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1})
+		H.Pad(pad, 0, 0, 0, 20)
+		local hit = H.Button(pad, "", {Size = UDim2.fromScale(1, 1)})
+		hit.MouseEnter:Connect(function() H.tween(hit, {BackgroundTransparency = 0.35}) end)
+		hit.MouseLeave:Connect(function() H.tween(hit, {BackgroundTransparency = 1}) end)
+		local box = H.Text(hit, "", {Position = H.U(8, 0), Size = H.U(28, 22), TextColor3 = T.white})
+		H.Text(hit, label, {Position = H.U(36, 0), Size = UDim2.new(1, -80, 1, 0), TextSize = 11})
+		local val = H.Text(hit, "", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 0),
+			Size = H.U(32, 22),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextSize = 11,
+		})
+		local function render()
+			box.Text = sState and "[x]" or "[ ]"
+			box.TextColor3 = sState and T.white or T.dim
+			val.Text = sState and "on" or "off"
+			val.TextColor3 = sState and T.white or T.dim
+		end
+		render()
+		hit.MouseButton1Click:Connect(function()
+			sState = not sState
+			render()
+			if callback then pcall(callback, sState) end
+		end)
+		return { Get = function() return sState end, Set = function(_, v) sState = v == true; render() end }
+	end
+
+	-- expand/collapse
+	local trajExpanded = false
+	trajHit.MouseButton1Click:Connect(function()
+		local mouseX = UserInputService:GetMouseLocation().X
+		local rowRight = trajRow.AbsolutePosition.X + trajRow.AbsoluteSize.X
+		local bindStart = rowRight - 120
+		local bindEnd = rowRight - 74
+		if mouseX >= bindStart and mouseX <= bindEnd then return end
+		local toggleStart = rowRight - 80
+		if mouseX >= toggleStart then
+			enhState.spearTrajectory = not enhState.spearTrajectory
+			trajRenderToggle()
+			applyTrajectory()
+		else
+			trajExpanded = not trajExpanded
+			trajContent.Visible = trajExpanded
+			trajCaret.Text = trajExpanded and "[-]" or "[+]"
+		end
+	end)
+
+	-- sub-items
+	local trajColorChoice = trajSubChoice("arc color", COLOR_NAMES, enhState.trajColor, function(v)
+		enhState.trajColor = v
+	end)
+
+	local trajOnTargetChoice = trajSubChoice("on target color", COLOR_NAMES, enhState.trajOnTargetColor, function(v)
+		enhState.trajOnTargetColor = v
+	end)
+
+	local trajTransSlider = trajSubSlider("transparency", 0, 0.95, enhState.trajTransparency, function(v)
+		enhState.trajTransparency = v
+	end, { Step = 0.05 })
+
+	local trajNoclipToggle = trajSubToggle("noclip", enhState.trajNoclip, function(v)
+		enhState.trajNoclip = v
+	end)
 
 	----------------------------------------------------------------
 	-- Config
@@ -443,7 +753,11 @@ local function init(Hub, UI)
 		vaultSpeedToggle:Set(enhState.vaultSpeedEnabled)
 		vaultSlider:Set(enhState.vaultSpeedMultiplier)
 		fastVaultToggle:Set(enhState.alwaysFastVault)
-		trajToggle:Set(enhState.spearTrajectory)
+		trajRenderToggle()
+		trajColorChoice:Set(enhState.trajColor)
+		trajOnTargetChoice:Set(enhState.trajOnTargetColor)
+		trajTransSlider:Set(enhState.trajTransparency)
+		trajNoclipToggle:Set(enhState.trajNoclip)
 	end)
 
 	----------------------------------------------------------------
@@ -462,10 +776,7 @@ local function init(Hub, UI)
 			vaultModule.evaluate = savedVaultEvaluate
 			savedVaultEvaluate = nil
 		end
-		for _, line in ipairs(trajLines) do
-			pcall(line.Remove, line)
-		end
-		pcall(trajImpact.Remove, trajImpact)
+		destroyTrajParts()
 	end)
 end
 
