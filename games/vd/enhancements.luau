@@ -23,6 +23,7 @@ local function init(Hub, UI)
 		preset1 = 1.03,
 		preset2 = 1.05,
 		preset3 = 1.08,
+		spearTrajectory = false,
 	}
 
 	local speedConn = nil
@@ -234,12 +235,201 @@ local function init(Hub, UI)
 	end, "fastVault")
 
 	----------------------------------------------------------------
+	-- Veil — spear trajectory
+	----------------------------------------------------------------
+	tab:Section("veil")
+
+	local SPEAR = {
+		Speed = 165,
+		Gravity = Vector3.new(0, -98.1, 0),
+		MaxLife = 4,
+		SpawnOffset = 3,
+	}
+	local TRAJ_SEGMENTS = 40
+	local TRAJ_ENEMY_COLOR = Color3.fromRGB(255, 60, 60)
+	local TRAJ_SELF_COLOR = Color3.fromRGB(100, 200, 255)
+
+	local trajLines = {}
+	local trajImpact = Drawing.new("Circle")
+	trajImpact.Visible = false
+	trajImpact.Radius = 4
+	trajImpact.Thickness = 2
+	trajImpact.Filled = false
+
+	for i = 1, TRAJ_SEGMENTS do
+		local line = Drawing.new("Line")
+		line.Visible = false
+		line.Thickness = 2
+		line.Transparency = 0.3
+		trajLines[i] = line
+	end
+
+	local trajConn = nil
+	local chargeStart = {}
+
+	local function getTeam(player)
+		local ok, team = pcall(function() return player.Team end)
+		return ok and team and team.Name or nil
+	end
+
+	local function findChargingVeil()
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				local char = player.Character
+				if char and char:GetAttribute("spearmode") == true then
+					return player, char
+				end
+			end
+		end
+		return nil, nil
+	end
+
+	local function hideTrajectory()
+		for _, line in ipairs(trajLines) do
+			line.Visible = false
+		end
+		trajImpact.Visible = false
+	end
+
+	local trajRayParams = RaycastParams.new()
+	trajRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	local function updateTrajectory()
+		local cam = workspace.CurrentCamera
+		if not cam then hideTrajectory() return end
+
+		local localChar = getCharacter()
+		if not localChar then hideTrajectory() return end
+
+		for player, _ in pairs(chargeStart) do
+			local char = player.Character
+			if not char or char:GetAttribute("spearmode") ~= true then
+				chargeStart[player] = nil
+			end
+		end
+
+		local origin, direction, power, color
+
+		if localChar:GetAttribute("spearmode") == true then
+			origin = cam.CFrame.Position
+			direction = cam.CFrame.LookVector
+			color = TRAJ_SELF_COLOR
+			if not chargeStart[LocalPlayer] then
+				chargeStart[LocalPlayer] = tick()
+			end
+			local elapsed = tick() - chargeStart[LocalPlayer]
+			power = math.clamp(elapsed * SPEAR.Speed, 1, SPEAR.Speed)
+		else
+			local veilPlayer, veilChar = findChargingVeil()
+			if not veilPlayer then hideTrajectory() return end
+
+			local head = veilChar:FindFirstChild("Head")
+			if not head then hideTrajectory() return end
+
+			origin = head.Position
+			direction = head.CFrame.LookVector
+			color = TRAJ_ENEMY_COLOR
+			if not chargeStart[veilPlayer] then
+				chargeStart[veilPlayer] = tick()
+			end
+			local elapsed = tick() - chargeStart[veilPlayer]
+			power = math.clamp(elapsed * SPEAR.Speed, 1, SPEAR.Speed)
+		end
+
+		origin = origin + direction * SPEAR.SpawnOffset
+
+		local excludeList = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then table.insert(excludeList, p.Character) end
+		end
+		trajRayParams.FilterDescendantsInstances = excludeList
+
+		local points = {}
+		local dt = SPEAR.MaxLife / TRAJ_SEGMENTS
+		local vel = direction * power
+		local hitGround = false
+
+		for i = 0, TRAJ_SEGMENTS do
+			local t = i * dt
+			local pos = origin + vel * t + SPEAR.Gravity * (0.5 * t * t)
+
+			if i > 0 and not hitGround then
+				local prev = points[#points]
+				local seg = pos - prev
+				local result = workspace:Raycast(prev, seg, trajRayParams)
+				if result then
+					table.insert(points, result.Position)
+					hitGround = true
+				else
+					table.insert(points, pos)
+				end
+			else
+				table.insert(points, pos)
+			end
+
+			if hitGround then break end
+		end
+
+		for i = 1, TRAJ_SEGMENTS do
+			local line = trajLines[i]
+			if i < #points then
+				local p1 = points[i]
+				local p2 = points[i + 1]
+				local sp1, on1 = cam:WorldToViewportPoint(p1)
+				local sp2, on2 = cam:WorldToViewportPoint(p2)
+
+				if (on1 or on2) and sp1.Z > 0 and sp2.Z > 0 then
+					line.From = Vector2.new(sp1.X, sp1.Y)
+					line.To = Vector2.new(sp2.X, sp2.Y)
+					line.Color = color
+					line.Visible = true
+				else
+					line.Visible = false
+				end
+			else
+				line.Visible = false
+			end
+		end
+
+		if hitGround and #points > 0 then
+			local sp, on = cam:WorldToViewportPoint(points[#points])
+			if on and sp.Z > 0 then
+				trajImpact.Position = Vector2.new(sp.X, sp.Y)
+				trajImpact.Color = color
+				trajImpact.Visible = true
+			else
+				trajImpact.Visible = false
+			end
+		else
+			trajImpact.Visible = false
+		end
+	end
+
+	local function applyTrajectory()
+		if trajConn then trajConn:Disconnect(); trajConn = nil end
+		if enhState.spearTrajectory then
+			trajConn = RunService.RenderStepped:Connect(updateTrajectory)
+		else
+			hideTrajectory()
+			chargeStart = {}
+		end
+	end
+
+	local trajToggle = tab:Toggle("spear trajectory", false, function(on)
+		enhState.spearTrajectory = on
+		applyTrajectory()
+	end, "spearTraj")
+
+	tab:Label("shows predicted spear arc when the veil is charging. cyan = yours, red = enemy.")
+
+	----------------------------------------------------------------
 	-- Config
 	----------------------------------------------------------------
 	Hub:RegisterConfig("enhState", enhState, function()
 		applySpeed()
 		applyVaultSpeed()
 		applyFastVault()
+		applyTrajectory()
 	end)
 
 	Hub:OnConfigLoad(function()
@@ -253,6 +443,7 @@ local function init(Hub, UI)
 		vaultSpeedToggle:Set(enhState.vaultSpeedEnabled)
 		vaultSlider:Set(enhState.vaultSpeedMultiplier)
 		fastVaultToggle:Set(enhState.alwaysFastVault)
+		trajToggle:Set(enhState.spearTrajectory)
 	end)
 
 	----------------------------------------------------------------
@@ -261,6 +452,7 @@ local function init(Hub, UI)
 	Hub:RegisterCleanup(function()
 		if speedConn then speedConn:Disconnect(); speedConn = nil end
 		if vaultSpeedConn then vaultSpeedConn:Disconnect(); vaultSpeedConn = nil end
+		if trajConn then trajConn:Disconnect(); trajConn = nil end
 		local char = getCharacter()
 		if char then
 			char:SetAttribute("speedboost", 1)
@@ -270,6 +462,10 @@ local function init(Hub, UI)
 			vaultModule.evaluate = savedVaultEvaluate
 			savedVaultEvaluate = nil
 		end
+		for _, line in ipairs(trajLines) do
+			pcall(line.Remove, line)
+		end
+		pcall(trajImpact.Remove, trajImpact)
 	end)
 end
 
