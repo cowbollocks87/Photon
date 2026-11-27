@@ -411,6 +411,11 @@ local function init(Hub, UI)
 					table.insert(survivorChars, p.Character)
 				end
 			end
+			for _, child in ipairs(workspace:GetChildren()) do
+				if child:IsA("Model") and child:GetAttribute("RoundBot") == true then
+					table.insert(survivorChars, child)
+				end
+			end
 			if #survivorChars > 0 then
 				targetRayParams.FilterDescendantsInstances = survivorChars
 				for i = 1, #points - 1 do
