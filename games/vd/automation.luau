@@ -494,6 +494,20 @@ local OPTIONAL_IGNORE = {
 	},
 }
 
+-- dash type classification
+local DASH_ANIMS = {
+	["rbxassetid://98163597193511"]  = true, -- hidden mark — forced dash (200+ studs/sec)
+}
+
+local SWEEP_ANIMS = {
+	["rbxassetid://100014992013740"] = true, -- abysswalker dark severance — speed buff sweep
+}
+
+local DASH_SPEED_THRESHOLD = 40
+local DASH_WATCH_WINDOW = 2.5
+local DASH_PARRY_LEAD = 0.08
+local SWEEP_WATCH_WINDOW = 3.0
+
 local FRENZY_START  = "rbxassetid://106776288044176"
 local FRENZY_CANCEL = "rbxassetid://140115024869914"
 
@@ -574,6 +588,70 @@ local function killerFacingMe()
 	end
 
 	return false
+end
+
+---------------------------------------------------------------------------
+-- Dash / sweep parry watchers
+---------------------------------------------------------------------------
+local function startDashWatch()
+	if not autoParry.enabled then return end
+	if parryWatchConn then parryWatchConn:Disconnect() end
+	local watchStart = os.clock()
+
+	parryWatchConn = RunService.RenderStepped:Connect(function()
+		if not autoParry.enabled or os.clock() - watchStart > DASH_WATCH_WINDOW then
+			parryWatchConn:Disconnect()
+			parryWatchConn = nil
+			return
+		end
+
+		local myRoot = cachedMyRoot
+		local kRoot = cachedKillerRoot
+		if not myRoot or not myRoot.Parent then refreshMyRoot(); myRoot = cachedMyRoot end
+		if not myRoot or not kRoot or not kRoot.Parent then return end
+
+		local offset = myRoot.Position - kRoot.Position
+		local dist = offset.Magnitude
+		if dist < 0.5 then return end
+
+		local toMe = offset / dist
+		local closingSpeed = kRoot.AssemblyLinearVelocity:Dot(toMe)
+
+		if dist <= autoParry.radius and killerFacingMe() then
+			parryWatchConn:Disconnect()
+			parryWatchConn = nil
+			fireParry()
+			return
+		end
+
+		if closingSpeed > DASH_SPEED_THRESHOLD then
+			local timeToArrival = (dist - autoParry.radius) / closingSpeed
+			if timeToArrival <= DASH_PARRY_LEAD then
+				parryWatchConn:Disconnect()
+				parryWatchConn = nil
+				fireParry()
+			end
+		end
+	end)
+end
+
+local function startSweepWatch()
+	if not autoParry.enabled then return end
+	if parryWatchConn then parryWatchConn:Disconnect() end
+	local watchStart = os.clock()
+
+	parryWatchConn = RunService.RenderStepped:Connect(function()
+		if not autoParry.enabled or os.clock() - watchStart > SWEEP_WATCH_WINDOW then
+			parryWatchConn:Disconnect()
+			parryWatchConn = nil
+			return
+		end
+		if not inParryRange() then return end
+		if not killerFacingMe() then return end
+		parryWatchConn:Disconnect()
+		parryWatchConn = nil
+		fireParry()
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -687,7 +765,21 @@ local function connectAnimator(animator, char)
 		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then return end
 		if autoParry.ignoreFrenzy and frenzyActive then return end
 
-		if not M1_ANIMS[id] and not SPECIAL_ANIMS[id] then return end
+		local isDash = DASH_ANIMS[id]
+		local isSweep = SWEEP_ANIMS[id]
+		local isM1 = M1_ANIMS[id]
+
+		if not isM1 and not isDash and not isSweep then return end
+
+		if isDash then
+			startDashWatch()
+			return
+		end
+
+		if isSweep then
+			startSweepWatch()
+			return
+		end
 
 		local function startWatch()
 			if not autoParry.enabled then return end
@@ -718,6 +810,20 @@ local function connectAnimator(animator, char)
 			task.delay(delayMs / 1000, startWatch)
 		else
 			startWatch()
+		end
+	end))
+
+	-- attribute-based dash/sweep detection (backup signal from server)
+	table.insert(parryConns, char.AttributeChanged:Connect(function(name)
+		if not autoParry.enabled then return end
+		if name == "HiddenDashReplicationUntil" and char:GetAttribute(name) ~= nil then
+			if not autoParry.ignoreHiddenMark then
+				startDashWatch()
+			end
+		elseif name == "AbysswalkerSlashViewmodelLevel" and char:GetAttribute(name) ~= nil then
+			if not autoParry.ignoreDarkSeverance then
+				startSweepWatch()
+			end
 		end
 	end))
 end
