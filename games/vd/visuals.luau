@@ -680,7 +680,6 @@ end
 local function isGenerator(inst)
 	if not inst:IsA("Model") then return false end
 	return inst:FindFirstChild("GeneratorBody") ~= nil
-		and inst.Parent and inst.Parent.Name == "Generators"
 end
 
 local function removeGeneratorESP(model)
