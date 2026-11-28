@@ -552,10 +552,22 @@ local cachedKillerRoot = nil
 local function refreshMyRoot()
 	local char = LocalPlayer.Character
 	cachedMyRoot = char and char:FindFirstChild("HumanoidRootPart") or nil
+	if not cachedMyRoot and char then
+		task.spawn(function()
+			local root = char:WaitForChild("HumanoidRootPart", 3)
+			if root then cachedMyRoot = root end
+		end)
+	end
 end
 
 local function cacheKillerRoot(killerChar)
 	cachedKillerRoot = killerChar and killerChar:FindFirstChild("HumanoidRootPart") or nil
+	if not cachedKillerRoot and killerChar then
+		task.spawn(function()
+			local root = killerChar:WaitForChild("HumanoidRootPart", 3)
+			if root then cachedKillerRoot = root end
+		end)
+	end
 end
 
 local function inParryRange()
@@ -826,6 +838,26 @@ local function connectAnimator(animator, char)
 			end
 		end
 	end))
+
+	-- scan tracks already playing (catches mid-attack on toggle)
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		local id = track.Animation and track.Animation.AnimationId or ""
+		if ANIM_BLACKLIST[id] then continue end
+		if autoParry.ignoreHiddenMark and OPTIONAL_IGNORE.hidden_mark[id] then continue end
+		if autoParry.ignoreDarkSeverance and OPTIONAL_IGNORE.dark_severance[id] then continue end
+		if DASH_ANIMS[id] then
+			startDashWatch()
+			break
+		elseif SWEEP_ANIMS[id] then
+			startSweepWatch()
+			break
+		elseif M1_ANIMS[id] then
+			if inParryRange() and killerFacingMe() then
+				fireParry()
+			end
+			break
+		end
+	end
 end
 
 local preloaded = false
@@ -855,7 +887,15 @@ local function setupParryWatcher()
 	preloadAnims()
 
 	local killer = findKiller()
-	if not killer then return end
+	if not killer then
+		task.delay(0.3, function()
+			if autoParry.enabled and not watchingKiller then
+				local k = findKiller()
+				if k then setupParryWatcher() end
+			end
+		end)
+		return
+	end
 	watchingKiller = killer
 
 	table.insert(parryConns, killer.CharacterAdded:Connect(function()
@@ -1036,6 +1076,7 @@ local function init(Hub, UI)
 		end
 	end))
 
+	preloadAnims()
 	refreshMyRoot()
 	Hub:_track(LocalPlayer.CharacterAdded:Connect(function(char)
 		local root = char:WaitForChild("HumanoidRootPart", 5)
