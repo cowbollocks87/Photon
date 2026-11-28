@@ -137,40 +137,58 @@ local function getPing()
 end
 
 ---------------------------------------------------------------------------
--- Clock overlay — per-map zone detection
+-- Clock overlay — per-map rectangular zone detection
 ---------------------------------------------------------------------------
 local CLOCK_DATA = {
 	["harbor"] = {
-		centerX = -1649.7, centerZ = -1398.4,
-		halfW = 430.1, halfH = 466.9,
-		midRadius = 0.35,
-		labels = {
-			[10] = "10 — Warehouse",
-		},
+		leftX = -1346.5, topZ = -1261.5,
+		width = 595.5, height = 493.4,
 	},
 }
 
-local function getClockZone(mapKey, posX, posZ)
-	local data = CLOCK_DATA[string.lower(mapKey)]
-	if not data then return nil end
-
-	local dx = (data.centerX - posX) / data.halfW
-	local dz = (posZ - data.centerZ) / data.halfH
-	local dist = math.sqrt(dx * dx + dz * dz)
-
-	local angle = math.deg(math.atan2(dx, dz))
-	if angle < 0 then angle += 360 end
-
-	if dist < data.midRadius then
-		if angle < 45 or angle >= 315 then return "Top Mid"
-		elseif angle < 135 then return "Mid Right"
-		elseif angle < 225 then return "Bottom Mid"
-		else return "Mid Left" end
+local function harborZone(nX, nZ)
+	if nZ < 0.28 then
+		if nX < 0.25 then return "11" end
+		if nX < 0.52 then return "12" end
+		return "1"
 	end
+	if nZ >= 0.78 then
+		if nX < 0.22 then return "7" end
+		if nX < 0.42 then return "6" end
+		if nX < 0.65 then return "5" end
+		return "4"
+	end
+	if nX < 0.22 then
+		if nZ < 0.48 then return "10 — Warehouse" end
+		if nZ < 0.65 then return "9" end
+		return "8"
+	end
+	if nX >= 0.65 then
+		if nZ < 0.52 then return "2" end
+		return "3"
+	end
+	if nZ < 0.42 then return "Top Mid" end
+	if nZ >= 0.62 then
+		if nX < 0.30 then return "8" end
+		return "Bottom Mid"
+	end
+	if nX < 0.48 then return "Mid Left" end
+	return "Mid Right"
+end
 
-	local clock = math.floor((angle + 15) / 30) % 12
-	if clock == 0 then clock = 12 end
-	return data.labels[clock] or tostring(clock)
+local ZONE_FN = {
+	["harbor"] = harborZone,
+}
+
+local function getClockZone(mapKey, posX, posZ)
+	local k = string.lower(mapKey)
+	local data = CLOCK_DATA[k]
+	if not data then return nil end
+	local fn = ZONE_FN[k]
+	if not fn then return nil end
+	local nX = math.clamp((data.leftX - posX) / data.width, 0, 1)
+	local nZ = math.clamp((data.topZ - posZ) / data.height, 0, 1)
+	return fn(nX, nZ)
 end
 
 local function getPlayerPosition()
