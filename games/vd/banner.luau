@@ -119,13 +119,14 @@ local MAP_NAMES = {
 
 local function detectMap()
 	local mapFolder = workspace:FindFirstChild("Map")
-	if not mapFolder then return nil, nil end
+	if not mapFolder then return nil, nil, nil end
 	local stream = mapFolder:GetAttribute("StreamMapName")
-	if not stream or stream == "" then return nil, nil end
-	local display = MAP_NAMES[string.lower(stream)] or stream
+	if not stream or stream == "" then return nil, nil, nil end
+	local key = string.lower(stream)
+	local display = MAP_NAMES[key] or stream
 	local variant = mapFolder:GetAttribute("StreamVariantName")
 	local varStr = variant and ("V" .. tostring(variant)) or nil
-	return display, varStr
+	return display, varStr, key
 end
 
 local function getPing()
@@ -133,6 +134,51 @@ local function getPing()
 		return math.floor(LocalPlayer:GetNetworkPing() * 1000 + 0.5)
 	end)
 	return ok and val or 0
+end
+
+---------------------------------------------------------------------------
+-- Clock overlay — per-map zone detection
+---------------------------------------------------------------------------
+local CLOCK_DATA = {
+	["harbor"] = {
+		centerX = -1649.7, centerZ = -1398.4,
+		halfW = 430.1, halfH = 466.9,
+		midRadius = 0.35,
+		labels = {
+			[10] = "10 — Warehouse",
+		},
+	},
+}
+
+local function getClockZone(mapKey, posX, posZ)
+	local data = CLOCK_DATA[string.lower(mapKey)]
+	if not data then return nil end
+
+	local dx = (data.centerX - posX) / data.halfW
+	local dz = (posZ - data.centerZ) / data.halfH
+	local dist = math.sqrt(dx * dx + dz * dz)
+
+	local angle = math.deg(math.atan2(dx, dz))
+	if angle < 0 then angle += 360 end
+
+	if dist < data.midRadius then
+		if angle < 45 or angle >= 315 then return "Top Mid"
+		elseif angle < 135 then return "Mid Right"
+		elseif angle < 225 then return "Bottom Mid"
+		else return "Mid Left" end
+	end
+
+	local clock = math.floor((angle + 15) / 30) % 12
+	if clock == 0 then clock = 12 end
+	return data.labels[clock] or tostring(clock)
+end
+
+local function getPlayerPosition()
+	local char = LocalPlayer.Character
+	if not char then return nil, nil end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return nil, nil end
+	return root.Position.X, root.Position.Z
 end
 
 ---------------------------------------------------------------------------
@@ -168,6 +214,7 @@ local function init(Hub, UI)
 		showMap = true,
 		showKiller = true,
 		showPerks = true,
+		showClock = true,
 	}
 
 	-----------------------------------------------------------------
@@ -211,8 +258,9 @@ local function init(Hub, UI)
 
 	local perfLabel   = infoLine("Perf", 1)
 	local mapLabel    = infoLine("Map", 2)
-	local killerLabel = infoLine("Killer", 3)
-	local perkLabel   = infoLine("Perks", 4)
+	local clockLabel  = infoLine("Clock", 3)
+	local killerLabel = infoLine("Killer", 4)
+	local perkLabel   = infoLine("Perks", 5)
 
 	-----------------------------------------------------------------
 	-- Update loop
@@ -221,9 +269,10 @@ local function init(Hub, UI)
 	local currentFPS = 0
 	local displayAcc = 0
 	local slowAcc = 0
-	local cachedMap, cachedVariant = nil, nil
+	local cachedMap, cachedVariant, cachedMapKey = nil, nil, nil
 	local cachedKillerName = nil
 	local cachedPerks = {}
+	local cachedClockZone = nil
 
 	Hub:_track(RunService.RenderStepped:Connect(function(dt)
 		if not bannerState.enabled then return end
@@ -238,10 +287,21 @@ local function init(Hub, UI)
 		slowAcc += dt
 		if slowAcc >= 2 then
 			slowAcc = 0
-			cachedMap, cachedVariant = detectMap()
+			cachedMap, cachedVariant, cachedMapKey = detectMap()
 			local killer = findKiller()
 			cachedKillerName = getKillerName(killer)
 			cachedPerks = killer and detectPerks(killer.Character) or {}
+		end
+
+		if bannerState.showClock and cachedMapKey then
+			local px, pz = getPlayerPosition()
+			if px then
+				cachedClockZone = getClockZone(cachedMapKey, px, pz)
+			else
+				cachedClockZone = nil
+			end
+		else
+			cachedClockZone = nil
 		end
 
 		displayAcc += dt
@@ -266,6 +326,13 @@ local function init(Hub, UI)
 			mapLabel.Visible = true
 		else
 			mapLabel.Visible = false
+		end
+
+		if bannerState.showClock and cachedClockZone then
+			clockLabel.Text = '<font color="' .. DIM_HEX .. '">clock</font> ' .. esc(cachedClockZone)
+			clockLabel.Visible = true
+		else
+			clockLabel.Visible = false
 		end
 
 		if bannerState.showKiller and cachedKillerName then
@@ -315,6 +382,10 @@ local function init(Hub, UI)
 		bannerState.showMap = on
 	end)
 
+	local clockToggle = tab:Toggle("clock position", true, function(on)
+		bannerState.showClock = on
+	end)
+
 	local killerToggle = tab:Toggle("killer info", true, function(on)
 		bannerState.showKiller = on
 	end)
@@ -333,6 +404,7 @@ local function init(Hub, UI)
 		posChoice:Set(bannerState.position)
 		perfToggle:Set(bannerState.showPerformance)
 		mapToggle:Set(bannerState.showMap)
+		clockToggle:Set(bannerState.showClock)
 		killerToggle:Set(bannerState.showKiller)
 		perkToggle:Set(bannerState.showPerks)
 		positionBanner(bannerState.position)
